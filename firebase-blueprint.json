@@ -1,0 +1,41 @@
+{
+  "entities": {
+    "Game": {
+      "title": "Game",
+      "description": "A Roblox game that can be voted for.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "The name of the game." },
+        "description": { "type": "string", "description": "A short description of the game." },
+        "imageUrl": { "type": "string", "description": "URL to the game's thumbnail image." },
+        "votes": { "type": "number", "description": "Total number of votes received." },
+        "creator": { "type": "string", "description": "The creator of the game." },
+        "robloxUrl": { "type": "string", "description": "Link to the game on Roblox." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string", "description": "UID of the user who added this game." }
+      },
+      "required": ["name", "imageUrl", "votes", "creator", "robloxUrl", "createdAt", "createdBy"]
+    },
+    "Vote": {
+      "title": "Vote",
+      "description": "A vote cast by a user for a specific game.",
+      "type": "object",
+      "properties": {
+        "gameId": { "type": "string", "description": "The ID of the game being voted for." },
+        "userId": { "type": "string", "description": "The UID of the user who cast the vote." },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["gameId", "userId", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/games": {
+      "schema": "Game",
+      "description": "Collection of Roblox games."
+    },
+    "/games/{gameId}/votes": {
+      "schema": "Vote",
+      "description": "Subcollection of votes for a specific game."
+    }
+  }
+}

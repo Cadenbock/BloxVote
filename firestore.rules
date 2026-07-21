@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: games
+    // Fields:
+    //   - name: string (required, 1-100 chars)
+    //   - description: string (optional, 0-500 chars)
+    //   - imageUrl: string (required, valid URL)
+    //   - votes: number (required, >= 0)
+    //   - creator: string (required, 1-100 chars)
+    //   - robloxUrl: string (required, valid URL)
+    //   - createdAt: timestamp (required)
+    //   - createdBy: string (required, matches auth.uid)
+    //
+    // Subcollection: games/{gameId}/votes
+    // Fields:
+    //   - gameId: string (required)
+    //   - userId: string (required, matches auth.uid)
+    //   - timestamp: timestamp (required)
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (request.auth.token.email.matches("(?i)^mondo7108@gmail\\.com$") ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+    }
+
+    function isValidUrl(url) {
+      return url is string && url.size() < 2000 && (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    // Game Validation
+    function isValidGame(data) {
+      return data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             data.creator is string && data.creator.size() >= 1 && data.creator.size() <= 100 &&
+             (data.description == null || !('description' in data) || (data.description is string && data.description.size() <= 10000)) &&
+             isValidUrl(data.imageUrl) &&
+             isValidUrl(data.robloxUrl) &&
+             data.votes is number && data.votes >= 0 &&
+             data.createdAt is timestamp &&
+             (data.createdBy == request.auth.uid || data.createdBy == "system");
+    }
+
+    // Vote Validation
+    function isValidVote(data, gameId) {
+      return data.gameId == gameId &&
+             data.userId == request.auth.uid &&
+             (data.timestamp == null || data.timestamp is timestamp);
+    }
+
+    match /test/connection {
+      allow read: if true;
+    }
+
+    match /games/{gameId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidGame(request.resource.data);
+      allow update: if isAuthenticated() && (
+        // Allow anyone to increment/decrement votes by 1
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes']) &&
+         (request.resource.data.votes == resource.data.votes + 1 || 
+          request.resource.data.votes == resource.data.votes - 1)) ||
+        // Allow owner or admin to update other fields
+        ((isOwner(resource.data.createdBy) || isAdmin()) && 
+         isValidGame(request.resource.data) &&
+         request.resource.data.createdBy == resource.data.createdBy &&
+         request.resource.data.createdAt == resource.data.createdAt)
+      );
+      allow delete: if isAdmin();
+
+      match /votes/{voteId} {
+        allow read: if true;
+        allow create, update: if isAuthenticated() && isOwner(voteId) && isValidVote(request.resource.data, gameId);
+        allow delete: if isAuthenticated() && (isOwner(voteId) || isAdmin());
+      }
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId);
+
+      match /votes/{gameId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+  }
+}
