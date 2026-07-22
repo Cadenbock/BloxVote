@@ -69,7 +69,9 @@ export default function AddGameModal({ isOpen, onClose, existingGames, onAdd }: 
       setStatus('fetching');
       setErrorMessage('');
       try {
-        const response = await fetch(`/api/roblox-info?url=${encodeURIComponent(formData.robloxUrl)}`);
+        const response = await fetch(
+  `https://bloxvote-api.cadenbacon388.workers.dev/api/roblox-info?url=${encodeURIComponent(formData.robloxUrl)}`
+);
         if (!response.ok) {
           const errData = await response.json();
           throw new Error(errData.error || 'Failed to auto-fetch Roblox details.');
