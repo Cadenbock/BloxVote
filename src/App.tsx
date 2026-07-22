@@ -433,7 +433,7 @@ function App() {
   };
 
   const handleDeleteGame = async (gameId: string) => {
-    if (!user || user.email?.toLowerCase() !== 'mondo7108@gmail.com') return;
+    if (!user || user.email?.toLowerCase() !== 'cadenbacon388@gmail.com') return;
 
     const game = games.find(g => g.id === gameId);
     const gameName = game ? game.name : 'Experience';
@@ -695,7 +695,7 @@ function App() {
                         game={game}
                         onVote={handleVote}
                         hasVoted={userVotes[game.id] || false}
-                        onDelete={user?.email?.toLowerCase() === 'mondo7108@gmail.com' ? handleDeleteGame : undefined}
+                        onDelete={user?.email?.toLowerCase() === 'cadenbacon388@gmail.com' ? handleDeleteGame : undefined}
                         rank={sortBy === 'votes' ? index + 1 : undefined}
                       />
                     ))}
