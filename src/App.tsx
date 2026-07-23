@@ -1,21 +1,22 @@
 import React, { useState, useEffect, Component, ErrorInfo, ReactNode, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  collection, 
-  query, 
-  orderBy, 
-  onSnapshot, 
-  addDoc, 
-  updateDoc, 
-  doc, 
-  setDoc, 
+import {
+  collection,
+  query,
+  orderBy,
+  onSnapshot,
+  addDoc,
+  updateDoc,
+  doc,
+  getDoc,
+  setDoc,
   deleteDoc,
   serverTimestamp,
   increment,
   getDocFromServer,
   collectionGroup,
   where
-} from 'firebase/firestore';
+} from "firebase/firestore";
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { Trophy, Plus, LogIn, LogOut, Gamepad2, Search, TrendingUp, AlertTriangle, BarChart3, CircleUser, Download } from 'lucide-react';
 import { db, auth, signIn, logout } from './firebase';
@@ -135,8 +136,25 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [currentTab, setCurrentTab] = useState<'leaderboard' | 'analytics'>('leaderboard');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // Sync isProfileOpen with the URL query parameter ?profile=true
+
+  // Check if current user is an admin
+  useEffect(() => {
+    const checkAdmin = async () => {
+     if (!user) {
+       setIsAdmin(false);
+       return;
+     }
+
+     const adminDoc = await getDoc(doc(db, "admins", user.uid));
+     setIsAdmin(adminDoc.exists());
+    };
+
+    checkAdmin();
+  }, [user]);
+
   useEffect(() => {
     const checkUrlForProfile = () => {
       const params = new URLSearchParams(window.location.search);
@@ -433,7 +451,7 @@ function App() {
   };
 
   const handleDeleteGame = async (gameId: string) => {
-    if (!user || user.email?.toLowerCase() !== 'cadenbacon388@gmail.com') return;
+    if (!user || !isAdmin) return;
 
     const game = games.find(g => g.id === gameId);
     const gameName = game ? game.name : 'Experience';
@@ -695,7 +713,7 @@ function App() {
                         game={game}
                         onVote={handleVote}
                         hasVoted={userVotes[game.id] || false}
-                        onDelete={user?.email?.toLowerCase() === 'cadenbacon388@gmail.com' ? handleDeleteGame : undefined}
+                        onDelete={isAdmin ? handleDeleteGame : undefined}
                         rank={sortBy === 'votes' ? index + 1 : undefined}
                       />
                     ))}
