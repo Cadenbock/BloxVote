@@ -26,6 +26,18 @@
         "timestamp": { "type": "string", "format": "date-time" }
       },
       "required": ["gameId", "userId", "timestamp"]
+    },
+    "GlobalAnnouncement": {
+      "title": "GlobalAnnouncement",
+      "description": "Global announcement banner config.",
+      "type": "object",
+      "properties": {
+        "message": { "type": "string", "description": "The announcement text." },
+        "enabled": { "type": "boolean", "description": "Whether the announcement banner is active." },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string", "description": "Email or UID of the admin who updated the announcement." }
+      },
+      "required": ["message", "enabled"]
     }
   },
   "firestore": {
@@ -36,6 +48,11 @@
     "/games/{gameId}/votes": {
       "schema": "Vote",
       "description": "Subcollection of votes for a specific game."
+    },
+    "/globalAnnouncement/{docId}": {
+      "schema": "GlobalAnnouncement",
+      "description": "Global announcement document for site-wide notices."
     }
   }
 }
+

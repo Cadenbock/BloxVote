@@ -20,13 +20,14 @@ import {
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { Trophy, Plus, LogIn, LogOut, Gamepad2, Search, TrendingUp, AlertTriangle, BarChart3, CircleUser, Download, Shield, Star, Flame } from 'lucide-react';
 import { db, auth, signIn, logout } from './firebase';
-import { Game, UserStreakData } from './types';
+import { Game, UserStreakData, GlobalAnnouncement } from './types';
 import GameCard from './components/GameCard';
 import AddGameModal from './components/AddGameModal';
 import TopGamesChart from './components/TopGamesChart';
 import UserProfile from './components/UserProfile';
 import AdminDashboard from './components/AdminDashboard';
 import FeaturedGamesBanner from './components/FeaturedGamesBanner';
+import AnnouncementBanner from './components/AnnouncementBanner';
 import { useToast } from './components/Toast';
 import { logActivity } from './lib/activity';
 import { recordUserVotingStreak } from './lib/streak';
@@ -84,10 +85,25 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 }
 
-class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: any }> {
-  constructor(props: { children: ReactNode }) {
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: any;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  props: ErrorBoundaryProps;
+  state: ErrorBoundaryState = {
+    hasError: false,
+    error: null
+  };
+
+  constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.props = props;
   }
 
   static getDerivedStateFromError(error: any) {
@@ -143,8 +159,25 @@ function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
   const [userStreak, setUserStreak] = useState<UserStreakData | null>(null);
+  const [announcement, setAnnouncement] = useState<GlobalAnnouncement | null>(null);
 
   const featuredGames = useMemo(() => games.filter(g => g.isFeatured), [games]);
+
+  // Realtime listener for global announcement
+  useEffect(() => {
+    const annRef = doc(db, 'globalAnnouncement', 'current');
+    const unsubscribe = onSnapshot(annRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setAnnouncement(snapshot.data() as GlobalAnnouncement);
+      } else {
+        setAnnouncement(null);
+      }
+    }, (err) => {
+      console.warn("Global announcement listener warning:", err);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // Realtime listener for user profile streak data
   useEffect(() => {
@@ -663,6 +696,9 @@ function App() {
       </nav>
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        {/* Global Announcement Banner */}
+        <AnnouncementBanner announcement={announcement} />
+
         {/* Hero Section */}
         <div className="relative mb-10 overflow-hidden rounded-[2rem] sm:rounded-[2.5rem] bg-zinc-900 px-6 py-10 text-center sm:px-12 sm:py-12">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(37,99,235,0.15),transparent_50%)]" />

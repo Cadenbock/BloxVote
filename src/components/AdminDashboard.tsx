@@ -31,7 +31,8 @@ import {
   Sparkles,
   TrendingUp,
   CheckCircle2,
-  Clock
+  Clock,
+  Megaphone
 } from 'lucide-react';
 import {
   BarChart,
@@ -58,7 +59,7 @@ interface AdminDashboardProps {
   onVote: (gameId: string) => Promise<void>;
 }
 
-type AdminTab = 'overview' | 'games' | 'admins' | 'activity';
+type AdminTab = 'overview' | 'games' | 'announcement' | 'admins' | 'activity';
 
 export default function AdminDashboard({ isOpen, onClose, games, onVote }: AdminDashboardProps) {
   const { toast } = useToast();
@@ -67,6 +68,13 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [searchGameQuery, setSearchGameQuery] = useState('');
   
+  // Global Announcement state
+  const [announcementMessage, setAnnouncementMessage] = useState('');
+  const [announcementEnabled, setAnnouncementEnabled] = useState(false);
+  const [isSavingAnnouncement, setIsSavingAnnouncement] = useState(false);
+  const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<any>(null);
+  const [announcementUpdatedBy, setAnnouncementUpdatedBy] = useState<string>('');
+
   // Modal states
   const [deletingGame, setDeletingGame] = useState<Game | null>(null);
   const [isAddAdminOpen, setIsAddAdminOpen] = useState(false);
@@ -77,6 +85,26 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
 
   const currentUser = auth.currentUser;
   const SUPER_ADMIN_EMAIL = 'mondo7108@gmail.com';
+
+  // Real-time Global Announcement listener
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const annRef = doc(db, 'globalAnnouncement', 'current');
+    const unsubscribe = onSnapshot(annRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setAnnouncementMessage(data.message || '');
+        setAnnouncementEnabled(!!data.enabled);
+        setAnnouncementUpdatedAt(data.updatedAt);
+        setAnnouncementUpdatedBy(data.updatedBy || '');
+      }
+    }, (err) => {
+      console.warn('Announcement subscription error:', err);
+    });
+
+    return () => unsubscribe();
+  }, [isOpen]);
 
   // Real-time Activities listener
   useEffect(() => {
@@ -282,6 +310,38 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
     }
   };
 
+  const handleSaveAnnouncement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!announcementMessage.trim() && announcementEnabled) {
+      toast('Please enter an announcement message before enabling', 'error');
+      return;
+    }
+
+    setIsSavingAnnouncement(true);
+    try {
+      const annRef = doc(db, 'globalAnnouncement', 'current');
+      await setDoc(annRef, {
+        message: announcementMessage.trim(),
+        enabled: announcementEnabled,
+        updatedAt: serverTimestamp(),
+        updatedBy: currentUser?.email || currentUser?.uid || 'Admin'
+      });
+
+      await logActivity(
+        'admin_add',
+        'Updated Announcement',
+        `${currentUser?.displayName || 'Admin'} ${announcementEnabled ? 'enabled' : 'disabled'} global announcement: "${announcementMessage.trim()}"`
+      );
+
+      toast('Global announcement saved successfully! 📢', 'success');
+    } catch (err: any) {
+      console.error('Error saving announcement:', err);
+      toast(`Failed to save announcement: ${err.message}`, 'error');
+    } finally {
+      setIsSavingAnnouncement(false);
+    }
+  };
+
   // Helper for time formatting
   const formatTimeAgo = (timestamp: any) => {
     if (!timestamp) return 'Just now';
@@ -365,6 +425,22 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
               >
                 <Gamepad2 size={15} />
                 Manage Games
+              </button>
+
+              <button
+                onClick={() => setActiveTab('announcement')}
+                className={cn(
+                  'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all relative',
+                  activeTab === 'announcement'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-850'
+                )}
+              >
+                <Megaphone size={15} />
+                Announcement
+                {announcementEnabled && (
+                  <span className="h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
+                )}
               </button>
 
               <button
@@ -735,6 +811,114 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
                 </div>
               </motion.div>
             )}
+
+            {/* ANNOUNCEMENT TAB */}
+            {activeTab === 'announcement' && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-6 max-w-2xl mx-auto"
+              >
+                <div className="border-b border-zinc-850 pb-4">
+                  <h3 className="text-lg font-black text-white flex items-center gap-2">
+                    <Megaphone className="text-blue-500" size={20} />
+                    Global Announcement System
+                  </h3>
+                  <p className="text-xs text-zinc-400 mt-1">
+                    Broadcast site-wide alerts and operational updates to all visitors live.
+                  </p>
+                </div>
+
+                <form onSubmit={handleSaveAnnouncement} className="space-y-6 rounded-3xl border border-zinc-800 bg-zinc-900/40 p-6">
+                  {/* Status Toggle */}
+                  <div className="flex items-center justify-between rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        "flex h-10 w-10 items-center justify-center rounded-xl font-bold transition-all",
+                        announcementEnabled ? "bg-blue-500/20 text-blue-400 border border-blue-500/30" : "bg-zinc-800 text-zinc-500"
+                      )}>
+                        <Megaphone size={20} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-white">Display Announcement Banner</p>
+                        <p className="text-xs text-zinc-400 mt-0.5">
+                          {announcementEnabled ? 'Banner is currently live for all visitors' : 'Banner is hidden'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setAnnouncementEnabled(!announcementEnabled)}
+                      className={cn(
+                        "relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                        announcementEnabled ? "bg-blue-600" : "bg-zinc-800"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out",
+                          announcementEnabled ? "translate-x-5" : "translate-x-0"
+                        )}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Message Input */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                      Announcement Message
+                    </label>
+                    <textarea
+                      rows={4}
+                      value={announcementMessage}
+                      onChange={(e) => setAnnouncementMessage(e.target.value)}
+                      placeholder="e.g. Roblox is currently experiencing API issues. Some game information may load slowly."
+                      className="w-full rounded-2xl bg-zinc-950 border border-zinc-800 p-4 text-sm text-white placeholder:text-zinc-600 focus:border-blue-500 focus:outline-none transition-all leading-relaxed"
+                    />
+                    <p className="text-[11px] text-zinc-500">
+                      Changes publish live to all visitors instantly via Firestore.
+                    </p>
+                  </div>
+
+                  {/* Live Preview Box */}
+                  <div className="space-y-2 pt-2 border-t border-zinc-800/60">
+                    <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Live Preview</p>
+                    <div className="rounded-2xl border border-blue-500/30 bg-zinc-900/90 p-4 relative">
+                      <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b from-blue-500 to-indigo-600 rounded-l-2xl" />
+                      <div className="flex items-start gap-3 pl-2">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                          <Megaphone size={16} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-black uppercase text-blue-400 mb-0.5">Announcement</p>
+                          <p className="text-sm font-medium text-zinc-200">
+                            {announcementMessage.trim() || 'No message set yet...'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Info footer */}
+                  {announcementUpdatedAt && (
+                    <div className="text-[11px] text-zinc-500 flex items-center justify-between font-mono pt-2">
+                      <span>Last updated by: {announcementUpdatedBy || 'Admin'}</span>
+                      <span>{formatTimeAgo(announcementUpdatedAt)}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={isSavingAnnouncement}
+                    className="w-full flex items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 text-xs font-bold text-white hover:bg-blue-500 disabled:opacity-50 transition-all shadow-lg shadow-blue-900/20"
+                  >
+                    {isSavingAnnouncement ? 'Saving Changes...' : 'Save & Publish Announcement'}
+                  </button>
+                </form>
+              </motion.div>
+            )}
+
 
             {/* 3. ACTIVITY FEED TAB */}
             {activeTab === 'activity' && (

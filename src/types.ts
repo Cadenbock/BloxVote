@@ -50,3 +50,10 @@ export interface UserStreakData {
   totalDaysVoted: number;
 }
 
+export interface GlobalAnnouncement {
+  message: string;
+  enabled: boolean;
+  updatedAt?: any;
+  updatedBy?: string;
+}
+
