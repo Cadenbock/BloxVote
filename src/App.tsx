@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Component, ErrorInfo, ReactNode, useRef, useMemo } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
 import {
   collection,
   query,
@@ -790,20 +790,22 @@ function App() {
                   ))}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-2">
-                  <AnimatePresence mode="popLayout">
-                    {filteredGames.map((game, index) => (
-                      <GameCard
-                        key={game.id}
-                        game={game}
-                        onVote={handleVote}
-                        hasVoted={userVotes[game.id] || false}
-                        onDelete={isAdmin ? handleDeleteGame : undefined}
-                        rank={sortBy === 'votes' ? index + 1 : undefined}
-                      />
-                    ))}
-                  </AnimatePresence>
-                </div>
+                <LayoutGroup id="game-grid">
+                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-2">
+                    <AnimatePresence>
+                      {filteredGames.map((game, index) => (
+                        <GameCard
+                          key={game.id}
+                          game={game}
+                          onVote={handleVote}
+                          hasVoted={userVotes[game.id] || false}
+                          onDelete={isAdmin ? handleDeleteGame : undefined}
+                          rank={sortBy === 'votes' ? index + 1 : undefined}
+                        />
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                </LayoutGroup>
               )}
 
               {!isLoading && filteredGames.length === 0 && (

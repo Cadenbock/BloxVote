@@ -72,15 +72,28 @@ export default function GameCard({ game, onVote, hasVoted, onDelete, rank }: Gam
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      whileHover={{ y: -4 }}
-      className="group relative overflow-hidden rounded-2xl bg-zinc-900/50 border border-zinc-800 p-4 transition-all hover:border-zinc-700 hover:bg-zinc-900/80"
+      transition={{
+        layout: { type: 'spring', stiffness: 220, damping: 26, mass: 0.8 },
+        opacity: { duration: 0.2 }
+      }}
+      initial={{ opacity: 0, scale: 0.96 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.96 }}
+      className="group relative overflow-hidden rounded-2xl bg-zinc-900/50 border border-zinc-800 p-4 transition-colors duration-200 hover:border-zinc-700 hover:bg-zinc-900/80 shadow-lg"
     >
       {rank !== undefined && (
-        <div className="absolute top-0 left-0 z-10 flex h-10 w-10 items-center justify-center rounded-br-2xl bg-blue-600 font-bold text-white shadow-lg">
-          #{rank}
+        <div className="absolute top-0 left-0 z-10 flex h-10 w-10 items-center justify-center rounded-br-2xl bg-blue-600 font-extrabold text-white shadow-lg overflow-hidden">
+          <AnimatePresence mode="wait">
+            <motion.span
+              key={rank}
+              initial={{ y: -8, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 8, opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              #{rank}
+            </motion.span>
+          </AnimatePresence>
         </div>
       )}
 
@@ -179,9 +192,15 @@ export default function GameCard({ game, onVote, hasVoted, onDelete, rank }: Gam
           <div className="mt-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="flex h-10 items-center gap-2 rounded-full bg-zinc-800/50 px-4 border border-zinc-700/50">
-                <span className={`text-lg font-bold transition-colors ${hasVoted ? 'text-emerald-400' : 'text-blue-400'}`}>
+                <motion.span 
+                  key={game.votes}
+                  initial={{ scale: 1.25 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                  className={`text-lg font-extrabold transition-colors ${hasVoted ? 'text-emerald-400' : 'text-blue-400'}`}
+                >
                   {game.votes.toLocaleString()}
-                </span>
+                </motion.span>
                 <span className="text-xs font-medium text-zinc-500 uppercase">Votes</span>
               </div>
             </div>
