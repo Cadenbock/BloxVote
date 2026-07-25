@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   collection,
@@ -7,6 +7,7 @@ import {
   onSnapshot,
   doc,
   setDoc,
+  addDoc,
   deleteDoc,
   updateDoc,
   serverTimestamp,
@@ -32,7 +33,15 @@ import {
   TrendingUp,
   CheckCircle2,
   Clock,
-  Megaphone
+  Megaphone,
+  MessageSquare,
+  Send,
+  Bot,
+  FileText,
+  Edit3,
+  Bug,
+  Scale,
+  Zap
 } from 'lucide-react';
 import {
   BarChart,
@@ -47,7 +56,7 @@ import {
   Pie
 } from 'recharts';
 import { db, auth } from '../firebase';
-import { Game, Activity, AdminUser } from '../types';
+import { Game, Activity, AdminUser, AdminChatMessage, UpdateLog } from '../types';
 import { useToast } from './Toast';
 import { logActivity } from '../lib/activity';
 import { cn } from '../lib/utils';
@@ -59,7 +68,7 @@ interface AdminDashboardProps {
   onVote: (gameId: string) => Promise<void>;
 }
 
-type AdminTab = 'overview' | 'games' | 'announcement' | 'admins' | 'activity';
+type AdminTab = 'overview' | 'games' | 'announcement' | 'updates' | 'chat' | 'admins' | 'activity';
 
 export default function AdminDashboard({ isOpen, onClose, games, onVote }: AdminDashboardProps) {
   const { toast } = useToast();
@@ -71,9 +80,25 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
   // Global Announcement state
   const [announcementMessage, setAnnouncementMessage] = useState('');
   const [announcementEnabled, setAnnouncementEnabled] = useState(false);
+  const [announcementDuration, setAnnouncementDuration] = useState<number>(7);
   const [isSavingAnnouncement, setIsSavingAnnouncement] = useState(false);
   const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<any>(null);
   const [announcementUpdatedBy, setAnnouncementUpdatedBy] = useState<string>('');
+
+  // Admin Chat state
+  const [chatMessages, setChatMessages] = useState<AdminChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isSendingChat, setIsSendingChat] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Update Logs state
+  const [updateLogs, setUpdateLogs] = useState<UpdateLog[]>([]);
+  const [editingLog, setEditingLog] = useState<UpdateLog | null>(null);
+  const [logTitle, setLogTitle] = useState('');
+  const [logVersion, setLogVersion] = useState('');
+  const [logCategory, setLogCategory] = useState<'major' | 'feature' | 'fix' | 'balance'>('feature');
+  const [logChangesText, setLogChangesText] = useState('');
+  const [isSavingLog, setIsSavingLog] = useState(false);
 
   // Modal states
   const [deletingGame, setDeletingGame] = useState<Game | null>(null);
@@ -86,6 +111,54 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
   const currentUser = auth.currentUser;
   const SUPER_ADMIN_EMAIL = 'mondo7108@gmail.com';
 
+  // Real-time Update Logs listener
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const q = query(collection(db, 'updateLogs'), orderBy('timestamp', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const logs = snapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      } as UpdateLog));
+      setUpdateLogs(logs);
+    }, (err) => {
+      console.warn('Update logs listener warning:', err);
+    });
+
+    return () => unsubscribe();
+  }, [isOpen]);
+
+  // Real-time Admin Chat listener
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const chatQuery = query(
+      collection(db, 'adminChat'),
+      orderBy('timestamp', 'asc'),
+      limit(100)
+    );
+
+    const unsubscribe = onSnapshot(chatQuery, (snapshot) => {
+      const msgs: AdminChatMessage[] = snapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      } as AdminChatMessage));
+      setChatMessages(msgs);
+    }, (err) => {
+      console.warn('Admin chat listener warning:', err);
+    });
+
+    return () => unsubscribe();
+  }, [isOpen]);
+
+  // Scroll chat to bottom when active or messages update
+  useEffect(() => {
+    if (activeTab === 'chat') {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages, activeTab]);
+
   // Real-time Global Announcement listener
   useEffect(() => {
     if (!isOpen) return;
@@ -96,6 +169,7 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
         const data = docSnap.data();
         setAnnouncementMessage(data.message || '');
         setAnnouncementEnabled(!!data.enabled);
+        setAnnouncementDuration(data.durationSeconds || 7);
         setAnnouncementUpdatedAt(data.updatedAt);
         setAnnouncementUpdatedBy(data.updatedBy || '');
       }
@@ -323,6 +397,7 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
       await setDoc(annRef, {
         message: announcementMessage.trim(),
         enabled: announcementEnabled,
+        durationSeconds: Math.max(1, Number(announcementDuration) || 7),
         updatedAt: serverTimestamp(),
         updatedBy: currentUser?.email || currentUser?.uid || 'Admin'
       });
@@ -339,6 +414,132 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
       toast(`Failed to save announcement: ${err.message}`, 'error');
     } finally {
       setIsSavingAnnouncement(false);
+    }
+  };
+
+  const handleSendChatMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || isSendingChat) return;
+
+    const text = chatInput.trim();
+    setChatInput('');
+    setIsSendingChat(true);
+
+    try {
+      await addDoc(collection(db, 'adminChat'), {
+        senderUid: currentUser?.uid || 'unknown',
+        senderEmail: currentUser?.email || 'admin@bloxvote.com',
+        senderDisplayName: currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Admin',
+        senderPhotoURL: currentUser?.photoURL || '',
+        text,
+        timestamp: serverTimestamp()
+      });
+    } catch (err: any) {
+      console.error('Failed to send admin chat message:', err);
+      toast(`Failed to send message: ${err.message}`, 'error');
+      setChatInput(text);
+    } finally {
+      setIsSendingChat(false);
+    }
+  };
+
+  const handleDeleteChatMessage = async (msgId: string) => {
+    try {
+      await deleteDoc(doc(db, 'adminChat', msgId));
+      toast('Chat message removed', 'success');
+    } catch (err: any) {
+      toast(`Failed to delete message: ${err.message}`, 'error');
+    }
+  };
+
+  const handleSaveUpdateLog = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!logTitle.trim()) {
+      toast('Please enter a title for the update log', 'error');
+      return;
+    }
+    const changesArray = logChangesText
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+
+    if (changesArray.length === 0) {
+      toast('Please enter at least one change bullet point', 'error');
+      return;
+    }
+
+    setIsSavingLog(true);
+    try {
+      if (editingLog) {
+        await updateDoc(doc(db, 'updateLogs', editingLog.id), {
+          title: logTitle.trim(),
+          version: logVersion.trim() || 'v1.0.0',
+          category: logCategory,
+          changes: changesArray,
+          authorName: currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Admin',
+          authorEmail: currentUser?.email || ''
+        });
+        await logActivity(
+          'admin_add',
+          'Updated Patch Note',
+          `${currentUser?.displayName || 'Admin'} revised update log: "${logTitle.trim()}"`
+        );
+        toast('Update log saved! 📝', 'success');
+      } else {
+        await addDoc(collection(db, 'updateLogs'), {
+          title: logTitle.trim(),
+          version: logVersion.trim() || 'v1.0.0',
+          category: logCategory,
+          changes: changesArray,
+          timestamp: serverTimestamp(),
+          authorName: currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Admin',
+          authorEmail: currentUser?.email || ''
+        });
+        await logActivity(
+          'admin_add',
+          'Published Patch Note',
+          `${currentUser?.displayName || 'Admin'} published log: "${logTitle.trim()}"`
+        );
+        toast('New update log published! 🚀', 'success');
+      }
+
+      // Reset form
+      setEditingLog(null);
+      setLogTitle('');
+      setLogVersion('');
+      setLogCategory('feature');
+      setLogChangesText('');
+    } catch (err: any) {
+      console.error('Error saving update log:', err);
+      toast(`Failed to save update log: ${err.message}`, 'error');
+    } finally {
+      setIsSavingLog(false);
+    }
+  };
+
+  const handleStartEditLog = (log: UpdateLog) => {
+    setEditingLog(log);
+    setLogTitle(log.title);
+    setLogVersion(log.version || '');
+    setLogCategory(log.category || 'feature');
+    setLogChangesText((log.changes || []).join('\n'));
+  };
+
+  const handleCancelEditLog = () => {
+    setEditingLog(null);
+    setLogTitle('');
+    setLogVersion('');
+    setLogCategory('feature');
+    setLogChangesText('');
+  };
+
+  const handleDeleteLog = async (logId: string) => {
+    try {
+      await deleteDoc(doc(db, 'updateLogs', logId));
+      toast('Update log deleted', 'success');
+      await logActivity('admin_remove', 'Deleted Patch Note', `${currentUser?.displayName || 'Admin'} removed an update log`);
+    } catch (err: any) {
+      toast(`Failed to delete log: ${err.message}`, 'error');
     }
   };
 
@@ -440,6 +641,42 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
                 Announcement
                 {announcementEnabled && (
                   <span className="h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
+                )}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('updates')}
+                className={cn(
+                  'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all relative',
+                  activeTab === 'updates'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-850'
+                )}
+              >
+                <FileText size={15} />
+                Update Logs
+                {updateLogs.length > 0 && (
+                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-zinc-800 text-[10px] text-zinc-300 px-1 font-mono">
+                    {updateLogs.length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('chat')}
+                className={cn(
+                  'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all relative',
+                  activeTab === 'chat'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-850'
+                )}
+              >
+                <MessageSquare size={15} />
+                Admin Chat
+                {chatMessages.length > 0 && (
+                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 text-[10px] text-white px-1 font-extrabold">
+                    {chatMessages.length > 99 ? '99+' : chatMessages.length}
+                  </span>
                 )}
               </button>
 
@@ -881,6 +1118,56 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
                     </p>
                   </div>
 
+                  {/* Display Duration Setting */}
+                  <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Clock size={16} className="text-blue-400" />
+                        <label className="text-xs font-bold uppercase tracking-wider text-zinc-300">
+                          Display Duration (Seconds)
+                        </label>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-lg border border-blue-500/20">
+                        {announcementDuration}s
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-zinc-400 leading-relaxed">
+                      How long the banner remains visible before popping out automatically:
+                    </p>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {[5, 7, 10, 15, 30, 60].map((sec) => (
+                        <button
+                          key={sec}
+                          type="button"
+                          onClick={() => setAnnouncementDuration(sec)}
+                          className={cn(
+                            "rounded-xl px-3 py-1.5 text-xs font-bold transition-all border",
+                            announcementDuration === sec
+                              ? "bg-blue-600 text-white border-blue-400 shadow-sm"
+                              : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white hover:border-zinc-700"
+                          )}
+                        >
+                          {sec}s
+                        </button>
+                      ))}
+
+                      <div className="flex items-center gap-1.5 ml-auto">
+                        <span className="text-xs text-zinc-500">Custom:</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={300}
+                          value={announcementDuration}
+                          onChange={(e) => setAnnouncementDuration(Math.max(1, parseInt(e.target.value) || 1))}
+                          className="w-16 rounded-xl bg-zinc-900 border border-zinc-800 px-2 py-1 text-center text-xs font-mono font-bold text-white focus:border-blue-500 focus:outline-none"
+                        />
+                        <span className="text-xs text-zinc-500">sec</span>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Live Preview Box */}
                   <div className="space-y-2 pt-2 border-t border-zinc-800/60">
                     <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Live Preview</p>
@@ -914,6 +1201,358 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
                     className="w-full flex items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 text-xs font-bold text-white hover:bg-blue-500 disabled:opacity-50 transition-all shadow-lg shadow-blue-900/20"
                   >
                     {isSavingAnnouncement ? 'Saving Changes...' : 'Save & Publish Announcement'}
+                  </button>
+                </form>
+              </motion.div>
+            )}
+
+            {/* UPDATE LOGS TAB */}
+            {activeTab === 'updates' && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-8 max-w-4xl mx-auto"
+              >
+                <div className="border-b border-zinc-850 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-lg font-black text-white flex items-center gap-2">
+                      <FileText className="text-blue-500" size={20} />
+                      Update Logs & Patch Notes Manager
+                    </h3>
+                    <p className="text-xs text-zinc-400 mt-1">
+                      Publish release notes, bug fixes, and feature updates visible to all users.
+                    </p>
+                  </div>
+
+                  {editingLog && (
+                    <button
+                      onClick={handleCancelEditLog}
+                      className="text-xs font-bold text-zinc-400 hover:text-white bg-zinc-800 px-3 py-1.5 rounded-xl border border-zinc-700 transition-all self-start"
+                    >
+                      Cancel Editing
+                    </button>
+                  )}
+                </div>
+
+                {/* Form to Publish or Edit Log */}
+                <form onSubmit={handleSaveUpdateLog} className="space-y-6 rounded-3xl border border-zinc-800 bg-zinc-900/40 p-6">
+                  <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Sparkles size={16} className="text-blue-400" />
+                      {editingLog ? `Editing Log: ${editingLog.title}` : 'Publish New Patch Note'}
+                    </h4>
+                    {editingLog && (
+                      <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20 font-bold uppercase">
+                        Edit Mode
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {/* Title */}
+                    <div className="sm:col-span-2 space-y-1.5">
+                      <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                        Update Title
+                      </label>
+                      <input
+                        type="text"
+                        value={logTitle}
+                        onChange={(e) => setLogTitle(e.target.value)}
+                        placeholder="e.g. Global Announcements & Auto-Dismissing Banners"
+                        className="w-full rounded-2xl bg-zinc-950 border border-zinc-800 px-4 py-3 text-xs sm:text-sm text-white placeholder:text-zinc-600 focus:border-blue-500 focus:outline-none transition-all"
+                      />
+                    </div>
+
+                    {/* Version */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                        Version Tag
+                      </label>
+                      <input
+                        type="text"
+                        value={logVersion}
+                        onChange={(e) => setLogVersion(e.target.value)}
+                        placeholder="e.g. v1.4.0"
+                        className="w-full rounded-2xl bg-zinc-950 border border-zinc-800 px-4 py-3 text-xs sm:text-sm text-white placeholder:text-zinc-600 focus:border-blue-500 focus:outline-none transition-all font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Category Selector */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                      Category Badge
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[
+                        { id: 'feature', label: 'New Feature', icon: Zap, color: 'text-blue-400 border-blue-500/30 bg-blue-500/10' },
+                        { id: 'major', label: 'Major Update', icon: Sparkles, color: 'text-purple-400 border-purple-500/30 bg-purple-500/10' },
+                        { id: 'fix', label: 'Bug Fix', icon: Bug, color: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' },
+                        { id: 'balance', label: 'Adjustment', icon: Scale, color: 'text-amber-400 border-amber-500/30 bg-amber-500/10' }
+                      ].map((cat) => {
+                        const Icon = cat.icon;
+                        const isSelected = logCategory === cat.id;
+                        return (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => setLogCategory(cat.id as any)}
+                            className={cn(
+                              "flex items-center justify-center gap-2 rounded-2xl p-3 text-xs font-bold border transition-all",
+                              isSelected
+                                ? "bg-blue-600 text-white border-blue-400 shadow-md"
+                                : "bg-zinc-950 text-zinc-400 border-zinc-800 hover:text-white hover:border-zinc-700"
+                            )}
+                          >
+                            <Icon size={14} className={isSelected ? 'text-white' : ''} />
+                            {cat.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Changes List Input */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                      Change Details (1 bullet point per line)
+                    </label>
+                    <textarea
+                      rows={5}
+                      value={logChangesText}
+                      onChange={(e) => setLogChangesText(e.target.value)}
+                      placeholder={`Added admin announcement banner timing controls\nImproved theme scrollbars across all modals\nOptimized real-time Firestore listeners`}
+                      className="w-full rounded-2xl bg-zinc-950 border border-zinc-800 p-4 text-xs sm:text-sm font-mono text-white placeholder:text-zinc-600 focus:border-blue-500 focus:outline-none transition-all leading-relaxed"
+                    />
+                    <p className="text-[11px] text-zinc-500">
+                      Each line will be rendered as a bullet point in the public Update Logs view.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3 pt-2">
+                    <button
+                      type="submit"
+                      disabled={isSavingLog}
+                      className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 text-xs font-bold text-white hover:bg-blue-500 disabled:opacity-50 transition-all shadow-lg shadow-blue-900/20"
+                    >
+                      {isSavingLog
+                        ? 'Saving Log...'
+                        : editingLog
+                        ? 'Save & Revise Update Log'
+                        : 'Publish Update Log Live'}
+                    </button>
+
+                    {editingLog && (
+                      <button
+                        type="button"
+                        onClick={handleCancelEditLog}
+                        className="px-5 py-3.5 rounded-2xl bg-zinc-800 text-xs font-bold text-zinc-300 hover:text-white hover:bg-zinc-700 transition-all border border-zinc-700"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                </form>
+
+                {/* Published Logs List */}
+                <div className="space-y-4 pt-4 border-t border-zinc-800">
+                  <h4 className="text-sm font-black text-white uppercase tracking-wider text-zinc-400 flex items-center justify-between">
+                    <span>Published Logs ({updateLogs.length})</span>
+                  </h4>
+
+                  {updateLogs.length === 0 ? (
+                    <div className="text-center py-8 text-xs text-zinc-500 rounded-2xl border border-dashed border-zinc-800">
+                      No update logs published yet.
+                    </div>
+                  ) : (
+                    updateLogs.map((log) => (
+                      <div
+                        key={log.id}
+                        className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5 space-y-3 relative group"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-black uppercase text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-lg border border-blue-500/20">
+                              {log.category}
+                            </span>
+                            {log.version && (
+                              <span className="font-mono text-xs font-bold text-zinc-300 bg-zinc-850 px-2.5 py-1 rounded-lg border border-zinc-750">
+                                {log.version}
+                              </span>
+                            )}
+                            <h5 className="text-sm font-extrabold text-white ml-1">
+                              {log.title}
+                            </h5>
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => handleStartEditLog(log)}
+                              className="p-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-700 transition-colors border border-zinc-700"
+                              title="Edit log"
+                            >
+                              <Edit3 size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteLog(log.id)}
+                              className="p-1.5 rounded-lg bg-zinc-800 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors border border-zinc-700"
+                              title="Delete log"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Bullets preview */}
+                        <ul className="space-y-1 pl-1 text-xs text-zinc-400 list-disc list-inside">
+                          {log.changes.map((c, i) => (
+                            <li key={i} className="line-clamp-1">{c}</li>
+                          ))}
+                        </ul>
+
+                        <div className="text-[11px] font-mono text-zinc-500 pt-1 border-t border-zinc-900 flex justify-between">
+                          <span>By: {log.authorName || 'Admin'}</span>
+                          <span>{formatTimeAgo(log.timestamp)}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* ADMIN CHAT TAB */}
+            {activeTab === 'chat' && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex flex-col h-[520px] rounded-3xl border border-zinc-800 bg-zinc-900/40 overflow-hidden"
+              >
+                {/* Chat Header */}
+                <div className="flex items-center justify-between border-b border-zinc-800/80 bg-zinc-950/60 px-6 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                      <MessageSquare size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-white flex items-center gap-2">
+                        Staff & Admin Chat
+                        <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                      </h3>
+                      <p className="text-xs text-zinc-400">
+                        Private real-time channel for BloxVote moderators and admins
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-xs font-mono text-zinc-400 bg-zinc-900 px-3 py-1.5 rounded-xl border border-zinc-800">
+                    <Users size={14} className="text-blue-400" />
+                    <span>{admins.length} Staff registered</span>
+                  </div>
+                </div>
+
+                {/* Chat Messages Feed */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                  {chatMessages.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-center p-8 space-y-3">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-zinc-800/80 text-zinc-500 border border-zinc-700/50">
+                        <MessageSquare size={28} />
+                      </div>
+                      <p className="text-sm font-bold text-zinc-300">No staff messages yet</p>
+                      <p className="text-xs text-zinc-500 max-w-sm">
+                        Start a conversation with fellow administrators. Share game feature ideas, operational notes, or site status updates.
+                      </p>
+                    </div>
+                  ) : (
+                    chatMessages.map((msg) => {
+                      const isSelf = msg.senderUid === currentUser?.uid || msg.senderEmail === currentUser?.email;
+                      return (
+                        <div
+                          key={msg.id}
+                          className={cn(
+                            'flex items-start gap-3 max-w-[82%]',
+                            isSelf ? 'ml-auto flex-row-reverse' : 'mr-auto'
+                          )}
+                        >
+                          {/* Avatar */}
+                          {msg.senderPhotoURL ? (
+                            <img
+                              src={msg.senderPhotoURL}
+                              alt={msg.senderDisplayName}
+                              className="h-8 w-8 rounded-full border border-zinc-700 object-cover shrink-0 mt-0.5"
+                            />
+                          ) : (
+                            <div className={cn(
+                              'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black uppercase border mt-0.5',
+                              isSelf
+                                ? 'bg-blue-600 text-white border-blue-400/30'
+                                : 'bg-zinc-800 text-zinc-300 border-zinc-700'
+                            )}>
+                              {msg.senderDisplayName ? msg.senderDisplayName.charAt(0) : 'A'}
+                            </div>
+                          )}
+
+                          {/* Message bubble */}
+                          <div className="flex flex-col space-y-1 min-w-0">
+                            <div className={cn(
+                              'flex items-center gap-2 text-[11px]',
+                              isSelf ? 'justify-end text-blue-300' : 'text-zinc-400'
+                            )}>
+                              <span className="font-bold text-zinc-200">
+                                {isSelf ? 'You' : msg.senderDisplayName}
+                              </span>
+                              <span className="text-[10px] text-zinc-500 font-mono">
+                                {formatTimeAgo(msg.timestamp)}
+                              </span>
+                            </div>
+
+                            <div className={cn(
+                              'group relative rounded-2xl px-4 py-2.5 text-xs sm:text-sm leading-relaxed break-words shadow-sm',
+                              isSelf
+                                ? 'bg-blue-600 text-white rounded-tr-none'
+                                : 'bg-zinc-800/90 text-zinc-100 border border-zinc-750 rounded-tl-none'
+                            )}>
+                              {msg.text}
+
+                              {/* Delete message option */}
+                              {(isSelf || currentUser?.email === SUPER_ADMIN_EMAIL) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteChatMessage(msg.id)}
+                                  className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-red-400 p-1 rounded-lg shadow-md"
+                                  title="Delete message"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+
+                {/* Input Form */}
+                <form
+                  onSubmit={handleSendChatMessage}
+                  className="border-t border-zinc-800 bg-zinc-950/80 p-4 flex items-center gap-3"
+                >
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder="Type a staff message..."
+                    className="flex-1 rounded-2xl bg-zinc-900 border border-zinc-800 px-4 py-3 text-xs sm:text-sm text-white placeholder:text-zinc-500 focus:border-blue-500 focus:outline-none transition-all"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!chatInput.trim() || isSendingChat}
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40 disabled:hover:bg-blue-600 transition-all shadow-md shadow-blue-900/20 active:scale-95"
+                  >
+                    <Send size={18} />
                   </button>
                 </form>
               </motion.div>

@@ -34,10 +34,40 @@
       "properties": {
         "message": { "type": "string", "description": "The announcement text." },
         "enabled": { "type": "boolean", "description": "Whether the announcement banner is active." },
+        "durationSeconds": { "type": "number", "description": "How many seconds the announcement banner remains visible before auto-dismissing." },
         "updatedAt": { "type": "string", "format": "date-time" },
         "updatedBy": { "type": "string", "description": "Email or UID of the admin who updated the announcement." }
       },
       "required": ["message", "enabled"]
+    },
+    "AdminChatMessage": {
+      "title": "AdminChatMessage",
+      "description": "Messages exchanged between admins in the Admin Suite chat.",
+      "type": "object",
+      "properties": {
+        "senderUid": { "type": "string" },
+        "senderEmail": { "type": "string" },
+        "senderDisplayName": { "type": "string" },
+        "senderPhotoURL": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderUid", "senderEmail", "senderDisplayName", "text", "timestamp"]
+    },
+    "UpdateLog": {
+      "title": "UpdateLog",
+      "description": "Public update log or patch note entry published by administrators.",
+      "type": "object",
+      "properties": {
+        "version": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string", "enum": ["major", "feature", "fix", "balance"] },
+        "changes": { "type": "array", "items": { "type": "string" } },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "authorName": { "type": "string" },
+        "authorEmail": { "type": "string" }
+      },
+      "required": ["title", "category", "changes", "timestamp"]
     }
   },
   "firestore": {
@@ -52,6 +82,14 @@
     "/globalAnnouncement/{docId}": {
       "schema": "GlobalAnnouncement",
       "description": "Global announcement document for site-wide notices."
+    },
+    "/adminChat/{messageId}": {
+      "schema": "AdminChatMessage",
+      "description": "Realtime admin communication channel."
+    },
+    "/updateLogs/{logId}": {
+      "schema": "UpdateLog",
+      "description": "Public site update and patch notes."
     }
   }
 }

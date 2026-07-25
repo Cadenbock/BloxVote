@@ -53,6 +53,10 @@ export default function AnnouncementBanner({ announcement, durationMs = 7000 }: 
   const [isVisible, setIsVisible] = useState(false);
   const lastAnnouncementId = useRef<string>('');
 
+  const effectiveDurationMs = (announcement?.durationSeconds && announcement.durationSeconds > 0)
+    ? announcement.durationSeconds * 1000
+    : durationMs;
+
   useEffect(() => {
     if (!announcement || !announcement.enabled || !announcement.message?.trim()) {
       setIsVisible(false);
@@ -60,7 +64,7 @@ export default function AnnouncementBanner({ announcement, durationMs = 7000 }: 
     }
 
     // Create unique key for current announcement to detect changes
-    const currentId = `${announcement.message}_${announcement.updatedAt?.seconds || Date.now()}`;
+    const currentId = `${announcement.message}_${announcement.durationSeconds || 7}_${announcement.updatedAt?.seconds || Date.now()}`;
 
     // Pop in whenever a new announcement is received or enabled
     if (currentId !== lastAnnouncementId.current || !isVisible) {
@@ -73,11 +77,11 @@ export default function AnnouncementBanner({ announcement, durationMs = 7000 }: 
       // Set auto-dismiss timer
       const timer = setTimeout(() => {
         setIsVisible(false);
-      }, durationMs);
+      }, effectiveDurationMs);
 
       return () => clearTimeout(timer);
     }
-  }, [announcement, durationMs]);
+  }, [announcement, effectiveDurationMs]);
 
   const handleDismiss = () => {
     setIsVisible(false);
@@ -88,9 +92,9 @@ export default function AnnouncementBanner({ announcement, durationMs = 7000 }: 
       {isVisible && announcement && announcement.enabled && announcement.message?.trim() && (
         <motion.div
           key={lastAnnouncementId.current}
-          initial={{ y: -120, opacity: 0, scale: 0.92 }}
-          animate={{ y: 0, opacity: 1, scale: 1 }}
-          exit={{ y: -120, opacity: 0, scale: 0.92 }}
+          initial={{ y: -100, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: -100, opacity: 0 }}
           transition={{ type: 'spring', stiffness: 350, damping: 25 }}
           className="fixed top-5 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl overflow-hidden rounded-2xl border border-blue-500/40 bg-zinc-900/95 p-4 sm:p-5 shadow-2xl shadow-blue-950/50 backdrop-blur-xl"
         >
@@ -130,7 +134,7 @@ export default function AnnouncementBanner({ announcement, durationMs = 7000 }: 
           <motion.div
             initial={{ scaleX: 1 }}
             animate={{ scaleX: 0 }}
-            transition={{ duration: durationMs / 1000, ease: 'linear' }}
+            transition={{ duration: effectiveDurationMs / 1000, ease: 'linear' }}
             className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500/70 origin-left"
           />
         </motion.div>

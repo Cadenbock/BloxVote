@@ -53,7 +53,29 @@ export interface UserStreakData {
 export interface GlobalAnnouncement {
   message: string;
   enabled: boolean;
+  durationSeconds?: number;
   updatedAt?: any;
   updatedBy?: string;
+}
+
+export interface AdminChatMessage {
+  id: string;
+  senderUid: string;
+  senderEmail: string;
+  senderDisplayName: string;
+  senderPhotoURL?: string;
+  text: string;
+  timestamp: any;
+}
+
+export interface UpdateLog {
+  id: string;
+  version?: string;
+  title: string;
+  category: 'major' | 'feature' | 'fix' | 'balance';
+  changes: string[];
+  timestamp: any;
+  authorName?: string;
+  authorEmail?: string;
 }
 

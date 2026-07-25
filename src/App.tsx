@@ -18,7 +18,7 @@ import {
   where
 } from "firebase/firestore";
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { Trophy, Plus, LogIn, LogOut, Gamepad2, Search, TrendingUp, AlertTriangle, BarChart3, CircleUser, Download, Shield, Star, Flame } from 'lucide-react';
+import { Trophy, Plus, LogIn, LogOut, Gamepad2, Search, TrendingUp, AlertTriangle, BarChart3, CircleUser, Download, Shield, Star, Flame, Sparkles, FileText } from 'lucide-react';
 import { db, auth, signIn, logout } from './firebase';
 import { Game, UserStreakData, GlobalAnnouncement } from './types';
 import GameCard from './components/GameCard';
@@ -28,6 +28,7 @@ import UserProfile from './components/UserProfile';
 import AdminDashboard from './components/AdminDashboard';
 import FeaturedGamesBanner from './components/FeaturedGamesBanner';
 import AnnouncementBanner from './components/AnnouncementBanner';
+import UpdateLogsModal from './components/UpdateLogsModal';
 import { useToast } from './components/Toast';
 import { logActivity } from './lib/activity';
 import { recordUserVotingStreak } from './lib/streak';
@@ -160,6 +161,7 @@ function App() {
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
   const [userStreak, setUserStreak] = useState<UserStreakData | null>(null);
   const [announcement, setAnnouncement] = useState<GlobalAnnouncement | null>(null);
+  const [isUpdateLogsOpen, setIsUpdateLogsOpen] = useState(false);
 
   const featuredGames = useMemo(() => games.filter(g => g.isFeatured), [games]);
 
@@ -627,6 +629,14 @@ function App() {
                 <BarChart3 size={14} />
                 Insights & Graphs
               </button>
+              <button
+                onClick={() => setIsUpdateLogsOpen(true)}
+                className="flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs sm:text-sm font-bold text-zinc-400 hover:text-white transition-all hover:bg-zinc-800/60"
+                title="View Release Notes & Patch Logs"
+              >
+                <Sparkles size={14} className="text-blue-400" />
+                Update Logs
+              </button>
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
@@ -906,6 +916,15 @@ function App() {
         onClose={() => setIsAdminDashboardOpen(false)}
         games={games}
         onVote={handleVote}
+      />
+
+      <UpdateLogsModal
+        isOpen={isUpdateLogsOpen}
+        onClose={() => setIsUpdateLogsOpen(false)}
+        isAdmin={isAdmin}
+        onOpenAdminWithTab={(tab) => {
+          setIsAdminDashboardOpen(true);
+        }}
       />
     </div>
   );
