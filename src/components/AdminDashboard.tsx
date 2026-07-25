@@ -576,68 +576,68 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
           initial={{ opacity: 0, scale: 0.96, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.96, y: 15 }}
-          className="relative z-10 w-full max-w-6xl rounded-[2rem] border border-zinc-800 bg-zinc-950/95 p-6 sm:p-8 shadow-2xl flex flex-col max-h-[90vh] my-auto overflow-hidden"
+          className="relative z-10 w-full max-w-6xl rounded-2xl sm:rounded-[2.5rem] border border-zinc-800 bg-zinc-950/95 p-3.5 sm:p-8 shadow-2xl flex flex-col max-h-[90vh] my-auto overflow-hidden"
         >
           {/* Glowing Top Ambient Header Line */}
           <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-blue-600 via-amber-500 to-indigo-600" />
 
           {/* Header Bar */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-850 pb-6 shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/30">
-                <Shield size={26} />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 border-b border-zinc-850 pb-4 sm:pb-6 shrink-0 relative pr-10 sm:pr-12">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+              <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/30 shrink-0">
+                <Shield size={22} className="sm:w-6 sm:h-6" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <h1 className="text-2xl font-black text-white tracking-tight">BloxVote Admin Suite</h1>
-                  <span className="rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 text-[10px] font-black uppercase text-amber-400 tracking-wider">
+                  <h1 className="text-lg sm:text-2xl font-black text-white tracking-tight truncate">BloxVote Admin Suite</h1>
+                  <span className="rounded-full bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[9px] sm:text-[10px] font-black uppercase text-amber-400 tracking-wider shrink-0">
                     PRO
                   </span>
                 </div>
-                <p className="text-xs font-medium text-zinc-400 mt-0.5">
+                <p className="text-[11px] sm:text-xs font-medium text-zinc-400 mt-0.5 truncate">
                   Live metrics, game curation, activity streaming, and staff control
                 </p>
               </div>
             </div>
 
             {/* Navigation Tabs */}
-            <div className="flex items-center gap-1 overflow-x-auto rounded-2xl bg-zinc-900/80 border border-zinc-800 p-1.5 self-start sm:self-auto">
+            <div className="flex items-center gap-1 overflow-x-auto rounded-2xl bg-zinc-900/80 border border-zinc-800 p-1 sm:p-1.5 self-start sm:self-auto max-w-full scrollbar-none">
               <button
                 onClick={() => setActiveTab('overview')}
                 className={cn(
-                  'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all',
+                  'flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold transition-all shrink-0 whitespace-nowrap',
                   activeTab === 'overview'
                     ? 'bg-blue-600 text-white shadow-md'
                     : 'text-zinc-400 hover:text-white hover:bg-zinc-850'
                 )}
               >
-                <BarChart3 size={15} />
+                <BarChart3 size={14} />
                 Overview
               </button>
 
               <button
                 onClick={() => setActiveTab('games')}
                 className={cn(
-                  'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all',
+                  'flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold transition-all shrink-0 whitespace-nowrap',
                   activeTab === 'games'
                     ? 'bg-blue-600 text-white shadow-md'
                     : 'text-zinc-400 hover:text-white hover:bg-zinc-850'
                 )}
               >
-                <Gamepad2 size={15} />
+                <Gamepad2 size={14} />
                 Manage Games
               </button>
 
               <button
                 onClick={() => setActiveTab('announcement')}
                 className={cn(
-                  'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all relative',
+                  'flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold transition-all relative shrink-0 whitespace-nowrap',
                   activeTab === 'announcement'
                     ? 'bg-blue-600 text-white shadow-md'
                     : 'text-zinc-400 hover:text-white hover:bg-zinc-850'
                 )}
               >
-                <Megaphone size={15} />
+                <Megaphone size={14} />
                 Announcement
                 {announcementEnabled && (
                   <span className="h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
@@ -647,13 +647,13 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
               <button
                 onClick={() => setActiveTab('updates')}
                 className={cn(
-                  'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all relative',
+                  'flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold transition-all relative shrink-0 whitespace-nowrap',
                   activeTab === 'updates'
                     ? 'bg-blue-600 text-white shadow-md'
                     : 'text-zinc-400 hover:text-white hover:bg-zinc-850'
                 )}
               >
-                <FileText size={15} />
+                <FileText size={14} />
                 Update Logs
                 {updateLogs.length > 0 && (
                   <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-zinc-800 text-[10px] text-zinc-300 px-1 font-mono">
@@ -665,13 +665,13 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
               <button
                 onClick={() => setActiveTab('chat')}
                 className={cn(
-                  'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all relative',
+                  'flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold transition-all relative shrink-0 whitespace-nowrap',
                   activeTab === 'chat'
                     ? 'bg-blue-600 text-white shadow-md'
                     : 'text-zinc-400 hover:text-white hover:bg-zinc-850'
                 )}
               >
-                <MessageSquare size={15} />
+                <MessageSquare size={14} />
                 Admin Chat
                 {chatMessages.length > 0 && (
                   <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 text-[10px] text-white px-1 font-extrabold">
@@ -683,13 +683,13 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
               <button
                 onClick={() => setActiveTab('activity')}
                 className={cn(
-                  'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all relative',
+                  'flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold transition-all relative shrink-0 whitespace-nowrap',
                   activeTab === 'activity'
                     ? 'bg-blue-600 text-white shadow-md'
                     : 'text-zinc-400 hover:text-white hover:bg-zinc-850'
                 )}
               >
-                <ActivityIcon size={15} />
+                <ActivityIcon size={14} />
                 Activity
                 {activities.length > 0 && (
                   <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -699,13 +699,13 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
               <button
                 onClick={() => setActiveTab('admins')}
                 className={cn(
-                  'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all',
+                  'flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold transition-all shrink-0 whitespace-nowrap',
                   activeTab === 'admins'
                     ? 'bg-blue-600 text-white shadow-md'
                     : 'text-zinc-400 hover:text-white hover:bg-zinc-850'
                 )}
               >
-                <Users size={15} />
+                <Users size={14} />
                 Admins ({admins.length})
               </button>
             </div>
@@ -713,9 +713,10 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
             {/* Close Button */}
             <button
               onClick={onClose}
-              className="absolute top-6 right-6 rounded-2xl border border-zinc-800 bg-zinc-900 p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-all"
+              className="absolute top-3.5 right-3.5 sm:top-6 sm:right-6 rounded-2xl border border-zinc-800 bg-zinc-900 p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-all z-20 shrink-0"
+              aria-label="Close Admin Suite"
             >
-              <X size={20} />
+              <X size={18} className="sm:w-5 sm:h-5" />
             </button>
           </div>
 
@@ -1427,28 +1428,28 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="flex flex-col h-[520px] rounded-3xl border border-zinc-800 bg-zinc-900/40 overflow-hidden"
+                className="flex flex-col h-[55vh] min-h-[320px] max-h-[520px] rounded-2xl sm:rounded-3xl border border-zinc-800 bg-zinc-900/40 overflow-hidden"
               >
                 {/* Chat Header */}
-                <div className="flex items-center justify-between border-b border-zinc-800/80 bg-zinc-950/60 px-6 py-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                      <MessageSquare size={20} />
+                <div className="flex items-center justify-between border-b border-zinc-800/80 bg-zinc-950/60 p-3.5 sm:px-6 sm:py-4 gap-2">
+                  <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 pr-1">
+                    <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
+                      <MessageSquare size={18} className="sm:w-5 sm:h-5" />
                     </div>
-                    <div>
-                      <h3 className="text-sm font-black text-white flex items-center gap-2">
+                    <div className="min-w-0">
+                      <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5 truncate">
                         Staff & Admin Chat
-                        <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
                       </h3>
-                      <p className="text-xs text-zinc-400">
-                        Private real-time channel for BloxVote moderators and admins
+                      <p className="text-[11px] sm:text-xs text-zinc-400 truncate">
+                        Private real-time channel for BloxVote staff
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 text-xs font-mono text-zinc-400 bg-zinc-900 px-3 py-1.5 rounded-xl border border-zinc-800">
-                    <Users size={14} className="text-blue-400" />
-                    <span>{admins.length} Staff registered</span>
+                  <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-mono text-zinc-400 bg-zinc-900 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl border border-zinc-800 shrink-0">
+                    <Users size={12} className="text-blue-400" />
+                    <span>{admins.length} Staff</span>
                   </div>
                 </div>
 

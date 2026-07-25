@@ -98,7 +98,7 @@ export default function UpdateLogsModal({ isOpen, onClose, isAdmin, onOpenAdminW
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6 overflow-y-auto">
         {/* Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -113,19 +113,19 @@ export default function UpdateLogsModal({ isOpen, onClose, isAdmin, onOpenAdminW
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          className="relative w-full max-w-3xl rounded-[2.5rem] border border-zinc-800 bg-zinc-900/95 p-6 sm:p-8 shadow-2xl backdrop-blur-xl z-10 my-8 overflow-hidden"
+          className="relative w-full max-w-3xl rounded-2xl sm:rounded-[2.5rem] border border-zinc-800 bg-zinc-900/95 p-4 sm:p-8 shadow-2xl backdrop-blur-xl z-10 my-auto sm:my-8 overflow-hidden max-h-[90vh] flex flex-col"
         >
           {/* Header */}
-          <div className="flex items-start justify-between border-b border-zinc-800/80 pb-6">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-400 border border-blue-500/20 shadow-inner">
-                <Sparkles size={24} />
+          <div className="flex items-start justify-between border-b border-zinc-800/80 pb-4 sm:pb-6 shrink-0 gap-3">
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0 pr-2">
+              <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-400 border border-blue-500/20 shadow-inner shrink-0">
+                <Sparkles size={22} className="sm:w-6 sm:h-6" />
               </div>
-              <div>
-                <h2 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2">
+              <div className="min-w-0">
+                <h2 className="text-lg sm:text-2xl font-black text-white flex items-center gap-2 truncate">
                   Update Logs & Changelog
                 </h2>
-                <p className="text-xs sm:text-sm text-zinc-400 mt-0.5">
+                <p className="text-xs sm:text-sm text-zinc-400 mt-0.5 line-clamp-1">
                   Discover what's new, fixed, and improved on BloxVote
                 </p>
               </div>
@@ -133,14 +133,15 @@ export default function UpdateLogsModal({ isOpen, onClose, isAdmin, onOpenAdminW
 
             <button
               onClick={onClose}
-              className="flex h-10 w-10 items-center justify-center rounded-2xl bg-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-all border border-zinc-700/50"
+              className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-2xl bg-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-all border border-zinc-700/50 shrink-0"
+              aria-label="Close Modal"
             >
-              <X size={20} />
+              <X size={18} className="sm:w-5 sm:h-5" />
             </button>
           </div>
 
           {/* Controls Bar: Search + Category filter */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 my-6">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 my-4 sm:my-6 shrink-0">
             {/* Search Input */}
             <div className="relative flex-1">
               <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
@@ -149,12 +150,12 @@ export default function UpdateLogsModal({ isOpen, onClose, isAdmin, onOpenAdminW
                 placeholder="Search update logs..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-2xl bg-zinc-950 border border-zinc-800 pl-10 pr-4 py-2.5 text-xs sm:text-sm text-white placeholder:text-zinc-600 focus:border-blue-500 focus:outline-none transition-all"
+                className="w-full rounded-2xl bg-zinc-950 border border-zinc-800 pl-10 pr-4 py-2 text-xs sm:text-sm text-white placeholder:text-zinc-600 focus:border-blue-500 focus:outline-none transition-all"
               />
             </div>
 
             {/* Category Pill Filters */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none max-w-full">
               {[
                 { id: 'all', label: 'All' },
                 { id: 'major', label: 'Major' },
@@ -166,7 +167,7 @@ export default function UpdateLogsModal({ isOpen, onClose, isAdmin, onOpenAdminW
                   key={cat.id}
                   onClick={() => setSelectedCategory(cat.id)}
                   className={cn(
-                    "rounded-xl px-3 py-2 text-xs font-bold transition-all whitespace-nowrap border",
+                    "rounded-xl px-3 py-1.5 text-xs font-bold transition-all whitespace-nowrap shrink-0 border",
                     selectedCategory === cat.id
                       ? "bg-blue-600 text-white border-blue-400 shadow-md"
                       : "bg-zinc-950 text-zinc-400 border-zinc-800 hover:text-white hover:border-zinc-700"
@@ -179,10 +180,10 @@ export default function UpdateLogsModal({ isOpen, onClose, isAdmin, onOpenAdminW
           </div>
 
           {/* Content List */}
-          <div className="max-h-[500px] overflow-y-auto pr-2 space-y-6">
+          <div className="flex-1 overflow-y-auto pr-1 sm:pr-2 space-y-4 sm:space-y-6">
             {filteredLogs.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center rounded-3xl border border-dashed border-zinc-800 bg-zinc-950/40 p-8 space-y-3">
-                <Sparkles size={36} className="text-zinc-600" />
+              <div className="flex flex-col items-center justify-center py-10 text-center rounded-3xl border border-dashed border-zinc-800 bg-zinc-950/40 p-6 space-y-3">
+                <Sparkles size={32} className="text-zinc-600" />
                 <p className="text-sm font-bold text-zinc-300">No update logs found</p>
                 <p className="text-xs text-zinc-500 max-w-sm">
                   {searchQuery || selectedCategory !== 'all'
@@ -194,26 +195,26 @@ export default function UpdateLogsModal({ isOpen, onClose, isAdmin, onOpenAdminW
               filteredLogs.map((log) => (
                 <div
                   key={log.id}
-                  className="rounded-3xl border border-zinc-800 bg-zinc-950/60 p-6 space-y-4 hover:border-zinc-700/80 transition-all shadow-lg relative group"
+                  className="rounded-2xl sm:rounded-3xl border border-zinc-800 bg-zinc-950/60 p-4 sm:p-6 space-y-3 sm:space-y-4 hover:border-zinc-700/80 transition-all shadow-lg relative group"
                 >
                   {/* Top Bar of Log item */}
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2.5 flex-wrap">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       {getCategoryBadge(log.category)}
                       {log.version && (
-                        <span className="font-mono text-xs font-bold text-zinc-300 bg-zinc-800 px-2.5 py-1 rounded-lg border border-zinc-700">
+                        <span className="font-mono text-[11px] sm:text-xs font-bold text-zinc-300 bg-zinc-800 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg border border-zinc-700">
                           {log.version}
                         </span>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-3 text-xs text-zinc-400 font-mono">
+                    <div className="flex items-center gap-2 sm:gap-3 text-[11px] sm:text-xs text-zinc-400 font-mono">
                       <span className="flex items-center gap-1">
-                        <Calendar size={13} className="text-blue-400" />
+                        <Calendar size={12} className="text-blue-400" />
                         {formatDate(log.timestamp)}
                       </span>
                       {log.authorName && (
-                        <span className="text-zinc-500">
+                        <span className="text-zinc-500 truncate max-w-[120px] sm:max-w-none">
                           by <strong className="text-zinc-300">{log.authorName}</strong>
                         </span>
                       )}
@@ -221,16 +222,16 @@ export default function UpdateLogsModal({ isOpen, onClose, isAdmin, onOpenAdminW
                   </div>
 
                   {/* Title */}
-                  <h3 className="text-base sm:text-lg font-black text-white leading-snug">
+                  <h3 className="text-sm sm:text-lg font-black text-white leading-snug">
                     {log.title}
                   </h3>
 
                   {/* Bulleted Changes */}
-                  <div className="space-y-2 pt-1 border-t border-zinc-850">
+                  <div className="space-y-1.5 sm:space-y-2 pt-1 border-t border-zinc-850">
                     {log.changes.map((change, idx) => (
-                      <div key={idx} className="flex items-start gap-2.5 text-xs sm:text-sm text-zinc-300 leading-relaxed">
-                        <CheckCircle2 size={16} className="text-blue-400 shrink-0 mt-0.5" />
-                        <span>{change}</span>
+                      <div key={idx} className="flex items-start gap-2 text-xs sm:text-sm text-zinc-300 leading-relaxed">
+                        <CheckCircle2 size={15} className="text-blue-400 shrink-0 mt-0.5" />
+                        <span className="break-words">{change}</span>
                       </div>
                     ))}
                   </div>
@@ -241,19 +242,19 @@ export default function UpdateLogsModal({ isOpen, onClose, isAdmin, onOpenAdminW
 
           {/* Admin shortcut if logged in as admin */}
           {isAdmin && onOpenAdminWithTab && (
-            <div className="mt-6 pt-4 border-t border-zinc-800/80 flex items-center justify-between">
-              <p className="text-xs text-zinc-500 flex items-center gap-1.5">
-                <ShieldCheck size={14} className="text-emerald-400" />
-                Administrator privileges active
+            <div className="mt-4 pt-3 border-t border-zinc-800/80 flex items-center justify-between shrink-0 flex-wrap gap-2">
+              <p className="text-[11px] sm:text-xs text-zinc-500 flex items-center gap-1.5">
+                <ShieldCheck size={13} className="text-emerald-400" />
+                Administrator active
               </p>
               <button
                 onClick={() => {
                   onClose();
                   onOpenAdminWithTab('updates');
                 }}
-                className="text-xs font-bold text-blue-400 hover:text-blue-300 underline underline-offset-4 flex items-center gap-1 transition-colors"
+                className="text-[11px] sm:text-xs font-bold text-blue-400 hover:text-blue-300 underline underline-offset-4 flex items-center gap-1 transition-colors"
               >
-                + Publish or Edit Update Logs in Admin Suite
+                + Publish or Edit in Admin Suite
               </button>
             </div>
           )}

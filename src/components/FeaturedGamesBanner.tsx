@@ -105,7 +105,7 @@ export default function FeaturedGamesBanner({ featuredGames, onVote, userVotes }
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.98 }}
           transition={{ duration: 0.3 }}
-          className="relative overflow-hidden rounded-[2.5rem] border-2 border-amber-500/40 bg-zinc-950 shadow-[0_0_50px_rgba(245,158,11,0.12)] min-h-[440px] flex flex-col justify-between"
+          className="relative overflow-hidden rounded-2xl sm:rounded-[2.5rem] border-2 border-amber-500/40 bg-zinc-950 shadow-[0_0_50px_rgba(245,158,11,0.12)] min-h-[360px] sm:min-h-[440px] flex flex-col justify-between"
         >
           {/* Background Ambient Cover Art with Blur Glow */}
           <div className="absolute inset-0 z-0 overflow-hidden">
@@ -125,12 +125,12 @@ export default function FeaturedGamesBanner({ featuredGames, onVote, userVotes }
           <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-600 z-10" />
 
           {/* Hero Content Grid */}
-          <div className="relative z-10 p-6 sm:p-10 md:p-12 flex flex-col lg:flex-row items-center justify-between gap-8 my-auto">
+          <div className="relative z-10 p-4 sm:p-8 md:p-12 flex flex-col lg:flex-row items-center justify-between gap-6 sm:gap-8 my-auto">
             
             {/* Left Column: Huge Game Image & Badge */}
             <div className="relative group shrink-0 w-full lg:w-auto flex justify-center">
-              <div className="absolute -inset-2 rounded-[2rem] bg-gradient-to-r from-amber-500 to-yellow-400 opacity-30 blur-xl group-hover:opacity-60 transition duration-500" />
-              <div className="relative h-64 w-64 sm:h-80 sm:w-80 md:h-88 md:w-88 rounded-[2rem] overflow-hidden border-2 border-amber-500/50 bg-zinc-900 shadow-2xl shrink-0">
+              <div className="absolute -inset-2 rounded-2xl sm:rounded-[2rem] bg-gradient-to-r from-amber-500 to-yellow-400 opacity-30 blur-xl group-hover:opacity-60 transition duration-500" />
+              <div className="relative h-48 w-48 sm:h-72 sm:w-72 md:h-80 md:w-80 rounded-2xl sm:rounded-[2rem] overflow-hidden border-2 border-amber-500/50 bg-zinc-900 shadow-2xl shrink-0">
                 <img
                   src={currentGame.imageUrl}
                   alt={currentGame.name}

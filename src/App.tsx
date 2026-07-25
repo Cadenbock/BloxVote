@@ -710,30 +710,30 @@ function App() {
         <AnnouncementBanner announcement={announcement} />
 
         {/* Hero Section */}
-        <div className="relative mb-10 overflow-hidden rounded-[2rem] sm:rounded-[2.5rem] bg-zinc-900 px-6 py-10 text-center sm:px-12 sm:py-12">
+        <div className="relative mb-8 sm:mb-10 overflow-hidden rounded-2xl sm:rounded-[2.5rem] bg-zinc-900 px-4 py-8 text-center sm:px-12 sm:py-12">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(37,99,235,0.15),transparent_50%)]" />
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="relative z-10"
           >
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-blue-600/10 px-4 py-1 text-xs sm:text-sm font-bold text-blue-400 border border-blue-500/20">
-              <TrendingUp size={15} />
+            <div className="mb-3 sm:mb-4 inline-flex items-center gap-1.5 sm:gap-2 rounded-full bg-blue-600/10 px-3 py-1 sm:px-4 text-xs sm:text-sm font-bold text-blue-400 border border-blue-500/20">
+              <TrendingUp size={14} className="sm:w-[15px] sm:h-[15px]" />
               Trending in the Metaverse
             </div>
-            <h1 className="mb-4 text-3xl font-black tracking-tight text-white sm:text-5xl md:text-6xl">
+            <h1 className="mb-3 sm:mb-4 text-2xl font-black tracking-tight text-white sm:text-5xl md:text-6xl leading-tight">
               Vote for your <span className="text-blue-500 italic">favorite</span> <br className="hidden sm:block" /> Roblox experience.
             </h1>
-            <p className="mx-auto mb-6 max-w-2xl text-sm sm:text-base text-zinc-400">
+            <p className="mx-auto mb-6 max-w-2xl text-xs sm:text-base text-zinc-400 leading-relaxed">
               Discover the most popular games on Roblox, voted by the community. 
               Add your favorites and help them climb the leaderboard.
             </p>
-            <div className="flex flex-wrap justify-center gap-4">
+            <div className="flex flex-wrap justify-center gap-3 sm:gap-4">
               <button
                 onClick={() => user ? setIsAddModalOpen(true) : signIn()}
-                className="flex items-center gap-2 rounded-full bg-blue-600 px-6 py-3 text-sm sm:text-base font-bold text-white shadow-xl shadow-blue-900/20 transition-all hover:bg-blue-500 hover:scale-105 active:scale-95"
+                className="flex items-center gap-2 rounded-full bg-blue-600 px-5 py-2.5 sm:px-6 sm:py-3 text-xs sm:text-base font-bold text-white shadow-xl shadow-blue-900/20 transition-all hover:bg-blue-500 hover:scale-105 active:scale-95"
               >
-                <Plus size={20} />
+                <Plus size={18} className="sm:w-5 sm:h-5" />
                 Add Your Favorite Game
               </button>
             </div>
@@ -741,26 +741,33 @@ function App() {
         </div>
 
         {/* Mobile Tab Switcher */}
-        <div className="flex md:hidden items-center justify-center mb-8 gap-1 rounded-2xl bg-zinc-900 border border-zinc-800 p-1">
+        <div className="flex md:hidden items-center justify-center mb-6 gap-1 rounded-2xl bg-zinc-900 border border-zinc-800 p-1 overflow-x-auto max-w-full scrollbar-none">
           <button
             onClick={() => setCurrentTab('leaderboard')}
             className={cn(
-              "flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold transition-all",
-              currentTab === 'leaderboard' ? "bg-zinc-850 text-white shadow-sm border border-zinc-700/20" : "text-zinc-500 hover:text-zinc-300"
+              "flex-1 min-w-[90px] flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold transition-all shrink-0",
+              currentTab === 'leaderboard' ? "bg-zinc-800 text-white shadow-sm border border-zinc-700/30" : "text-zinc-400 hover:text-zinc-200"
             )}
           >
-            <Trophy size={16} />
+            <Trophy size={14} />
             Leaderboard
           </button>
           <button
             onClick={() => setCurrentTab('analytics')}
             className={cn(
-              "flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold transition-all",
-              currentTab === 'analytics' ? "bg-zinc-850 text-white shadow-sm border border-zinc-700/20" : "text-zinc-500 hover:text-zinc-300"
+              "flex-1 min-w-[90px] flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold transition-all shrink-0",
+              currentTab === 'analytics' ? "bg-zinc-800 text-white shadow-sm border border-zinc-700/30" : "text-zinc-400 hover:text-zinc-200"
             )}
           >
-            <BarChart3 size={16} />
-            Insights & Graphs
+            <BarChart3 size={14} />
+            Analytics
+          </button>
+          <button
+            onClick={() => setIsUpdateLogsOpen(true)}
+            className="flex-1 min-w-[90px] flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold text-zinc-400 hover:text-white transition-all shrink-0"
+          >
+            <Sparkles size={14} className="text-blue-400" />
+            Updates
           </button>
         </div>
 
@@ -830,14 +837,14 @@ function App() {
 
               {/* Grid */}
               {isLoading ? (
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-2">
-                  {[1, 2, 3, 4].map(i => (
+                <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 xl:grid-cols-3">
+                  {[1, 2, 3, 4, 5, 6].map(i => (
                     <div key={i} className="h-48 animate-pulse rounded-2xl bg-zinc-900/50 border border-zinc-800" />
                   ))}
                 </div>
               ) : (
                 <LayoutGroup id="game-grid">
-                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 xl:grid-cols-3">
                     <AnimatePresence>
                       {filteredGames.map((game, index) => (
                         <GameCard

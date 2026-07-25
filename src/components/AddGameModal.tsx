@@ -144,7 +144,7 @@ export default function AddGameModal({ isOpen, onClose, existingGames, onAdd }: 
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -157,27 +157,28 @@ export default function AddGameModal({ isOpen, onClose, existingGames, onAdd }: 
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="relative w-full max-w-lg overflow-hidden rounded-3xl bg-zinc-900 border border-zinc-800 shadow-2xl"
+            className="relative w-full max-w-lg overflow-hidden rounded-2xl sm:rounded-3xl bg-zinc-900 border border-zinc-800 shadow-2xl my-auto max-h-[90vh] flex flex-col"
           >
-            <div className="flex items-center justify-between border-b border-zinc-800 p-6">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600/20 text-blue-500">
-                  <Plus size={24} />
+            <div className="flex items-center justify-between border-b border-zinc-800 p-4 sm:p-6 shrink-0 gap-2">
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-blue-600/20 text-blue-500 shrink-0">
+                  <Plus size={20} className="sm:w-6 sm:h-6" />
                 </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-white">Add Roblox Game</h2>
-                  <p className="text-xs text-zinc-500">Paste URL to automatically fetch details</p>
+                <div className="min-w-0">
+                  <h2 className="text-lg sm:text-2xl font-bold text-white truncate">Add Roblox Game</h2>
+                  <p className="text-xs text-zinc-500 truncate">Paste URL to automatically fetch details</p>
                 </div>
               </div>
               <button
                 onClick={onClose}
-                className="rounded-full p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
+                className="rounded-full p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors shrink-0"
+                aria-label="Close"
               >
-                <X size={24} />
+                <X size={20} className="sm:w-6 sm:h-6" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+            <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
               {/* URL Input First */}
               <div className="space-y-2">
                 <label className="text-sm font-medium text-zinc-400 flex items-center gap-2">

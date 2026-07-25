@@ -85,7 +85,7 @@ export default function UserProfile({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
         {/* Backdrop overlay */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -100,7 +100,7 @@ export default function UserProfile({
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="relative w-full max-w-2xl max-h-[88vh] flex flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 shadow-2xl"
+          className="relative w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden rounded-2xl sm:rounded-3xl border border-zinc-800 bg-zinc-950 shadow-2xl my-auto"
         >
           {/* Top colored accent line */}
           <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-500 via-purple-500 to-emerald-500 z-10" />
@@ -108,62 +108,63 @@ export default function UserProfile({
           {/* Close button */}
           <button
             onClick={onClose}
-            className="absolute top-5 right-5 z-20 rounded-full border border-zinc-800 bg-zinc-900/90 p-2.5 text-zinc-400 transition-all hover:bg-zinc-800 hover:text-white shadow-lg"
+            className="absolute top-3.5 right-3.5 sm:top-5 sm:right-5 z-20 rounded-full border border-zinc-800 bg-zinc-900/90 p-2 sm:p-2.5 text-zinc-400 transition-all hover:bg-zinc-800 hover:text-white shadow-lg"
+            aria-label="Close Profile"
           >
-            <X size={18} />
+            <X size={16} className="sm:w-4 sm:h-4" />
           </button>
 
           {user ? (
-            <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-4 sm:space-y-6">
               {/* User Header Details */}
-              <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-6 border-b border-zinc-900 pb-6 pr-8">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6 border-b border-zinc-900 pb-4 sm:pb-6 pr-10 sm:pr-8">
                 <div className="relative shrink-0">
                   <img
                     src={user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.uid}`}
                     alt={user.displayName || 'Voter'}
                     referrerPolicy="no-referrer"
-                    className="h-20 w-20 rounded-2xl border-2 border-zinc-800 bg-zinc-900 object-cover"
+                    className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl border-2 border-zinc-800 bg-zinc-900 object-cover"
                   />
-                  <div className="absolute -bottom-2 -right-2 flex h-7 w-7 items-center justify-center rounded-xl bg-blue-500 border-2 border-zinc-950 shadow-lg text-white">
-                    <Award size={14} />
+                  <div className="absolute -bottom-1.5 -right-1.5 sm:-bottom-2 sm:-right-2 flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-xl bg-blue-500 border-2 border-zinc-950 shadow-lg text-white">
+                    <Award size={12} className="sm:w-3.5 sm:h-3.5" />
                   </div>
                 </div>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-2xl font-black text-white tracking-tight truncate">
+                    <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight truncate">
                       {user.displayName || 'Anonymous Voter'}
                     </h2>
-                    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider ${voterTier.color}`}>
+                    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider ${voterTier.color}`}>
                       {voterTier.title}
                     </span>
                   </div>
 
-                  <p className="mt-1 text-sm text-zinc-400 flex items-center gap-1.5 truncate">
-                    <Mail size={14} className="text-zinc-600" />
-                    {user.email || 'No public email'}
+                  <p className="mt-1 text-xs sm:text-sm text-zinc-400 flex items-center gap-1.5 truncate">
+                    <Mail size={13} className="text-zinc-600 shrink-0" />
+                    <span className="truncate">{user.email || 'No public email'}</span>
                   </p>
 
-                  <p className="mt-1 text-xs text-zinc-500 flex items-center gap-1.5">
-                    <Calendar size={13} className="text-zinc-700" />
+                  <p className="mt-1 text-[11px] sm:text-xs text-zinc-500 flex items-center gap-1.5">
+                    <Calendar size={12} className="text-zinc-700 shrink-0" />
                     Voter since {accountCreatedDate}
                   </p>
                 </div>
               </div>
 
               {/* 🔥 VOTING STREAK PROMINENT BADGE & CARD */}
-              <div className="relative rounded-3xl border border-orange-500/30 bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-zinc-900/70 p-5 sm:p-6 shadow-xl overflow-visible">
+              <div className="relative rounded-2xl sm:rounded-3xl border border-orange-500/30 bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-zinc-900/70 p-4 sm:p-6 shadow-xl overflow-visible">
                 {/* Background Ambient Flame Icon */}
                 <div className="absolute right-2 bottom-0 text-orange-500/10 pointer-events-none overflow-hidden rounded-3xl inset-0 flex justify-end items-end p-2">
-                  <Flame size={110} />
+                  <Flame size={90} className="sm:w-[110px] sm:h-[110px]" />
                 </div>
 
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
-                  <div className="flex items-center gap-4">
-                    <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-orange-600 to-amber-500 text-white shadow-lg shadow-orange-900/40 shrink-0">
-                      <Flame size={30} className="animate-pulse" />
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 relative z-10">
+                  <div className="flex items-center gap-3 sm:gap-4">
+                    <div className="relative flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-orange-600 to-amber-500 text-white shadow-lg shadow-orange-900/40 shrink-0">
+                      <Flame size={24} className="sm:w-7 sm:h-7 animate-pulse" />
                       {streakCount > 0 && (
-                        <div className="absolute top-0 right-0 translate-x-1/3 -translate-y-1/3 flex h-6 w-6 items-center justify-center rounded-full bg-amber-400 text-black text-[11px] font-black border-2 border-zinc-950 shadow-md">
+                        <div className="absolute top-0 right-0 translate-x-1/3 -translate-y-1/3 flex h-5 w-5 sm:h-6 sm:w-6 items-center justify-center rounded-full bg-amber-400 text-black text-[10px] sm:text-[11px] font-black border-2 border-zinc-950 shadow-md">
                           {streakCount}
                         </div>
                       )}
@@ -171,16 +172,16 @@ export default function UserProfile({
 
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs font-bold uppercase tracking-wider text-orange-400">Voting Streak</span>
-                        <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${streakBadge.color}`}>
+                        <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-orange-400">Voting Streak</span>
+                        <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] sm:text-[10px] font-black uppercase tracking-wider ${streakBadge.color}`}>
                           <span>{streakBadge.badge}</span>
                           <span>{streakBadge.title}</span>
                         </span>
                       </div>
-                      <h3 className="text-2xl font-black text-white mt-0.5 flex items-center gap-2">
+                      <h3 className="text-xl sm:text-2xl font-black text-white mt-0.5 flex items-center gap-2">
                         {streakCount} {streakCount === 1 ? 'Day' : 'Consecutive Days'}
                       </h3>
-                      <p className="text-xs text-zinc-400 mt-1 max-w-sm leading-relaxed">
+                      <p className="text-[11px] sm:text-xs text-zinc-400 mt-0.5 sm:mt-1 max-w-sm leading-relaxed">
                         {streakCount > 0 
                           ? `Vote every day to keep your flame burning! Highest streak: ${highestStreak} days.`
                           : 'Vote on any game today to start your consecutive day voting streak!'}
@@ -189,11 +190,11 @@ export default function UserProfile({
                   </div>
 
                   {/* Streak Progress Pill */}
-                  <div className="flex items-center gap-2 rounded-2xl bg-zinc-950/90 border border-zinc-800 px-4 py-3 shrink-0 self-start sm:self-auto shadow-md">
-                    <Zap size={18} className="text-amber-400 fill-amber-400" />
+                  <div className="flex items-center gap-2 rounded-xl sm:rounded-2xl bg-zinc-950/90 border border-zinc-800 px-3 py-2 sm:px-4 sm:py-3 shrink-0 self-start sm:self-auto shadow-md">
+                    <Zap size={16} className="text-amber-400 fill-amber-400 shrink-0" />
                     <div>
-                      <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Best Record</p>
-                      <p className="text-sm font-black text-amber-300 font-mono">{highestStreak} Days</p>
+                      <p className="text-[9px] sm:text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Best Record</p>
+                      <p className="text-xs sm:text-sm font-black text-amber-300 font-mono">{highestStreak} Days</p>
                     </div>
                   </div>
                 </div>
