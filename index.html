@@ -3,8 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>BloxVote - Vote for the Best Roblox Games</title>
     <link rel="icon" type="image/png" href="/BloxVote/favicon.png">
+    <script>
+      // Automatic recovery if browser cached an old index.html referencing missing JS/CSS bundle hashes
+      window.addEventListener('error', function(e) {
+        if (e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK')) {
+          var isAsset = e.target.src || e.target.href;
+          if (isAsset && !sessionStorage.getItem('asset_reload_attempted')) {
+            sessionStorage.setItem('asset_reload_attempted', 'true');
+            window.location.reload(true);
+          }
+        }
+      }, true);
+    </script>
   </head>
   <body>
     <div id="root"></div>
