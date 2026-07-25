@@ -94,9 +94,7 @@ async function startServer() {
       appType: "spa",
     });
     app.use((req, res, next) => {
-      if (req.headers.accept?.includes('text/html')) {
-        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      }
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       next();
     });
     app.use(vite.middlewares);
@@ -105,14 +103,20 @@ async function startServer() {
     app.use(express.static(distPath, {
       setHeaders: (res, filePath) => {
         if (filePath.endsWith('.html')) {
-          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
         } else if (filePath.includes('/assets/')) {
           res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         }
       }
     }));
+    // Catch missing asset files explicitly so they return 404 instead of index.html
+    app.use('/assets', (req, res) => {
+      res.status(404).send('Asset not found');
+    });
     app.get('*', (req, res) => {
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

@@ -12,10 +12,15 @@
       // Automatic recovery if browser cached an old index.html referencing missing JS/CSS bundle hashes
       window.addEventListener('error', function(e) {
         if (e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK')) {
-          var isAsset = e.target.src || e.target.href;
-          if (isAsset && !sessionStorage.getItem('asset_reload_attempted')) {
-            sessionStorage.setItem('asset_reload_attempted', 'true');
-            window.location.reload(true);
+          var src = e.target.src || e.target.href;
+          if (src && (src.includes('/assets/') || src.includes('index-'))) {
+            var key = 'asset_reload_t';
+            var lastReload = sessionStorage.getItem(key);
+            var now = Date.now();
+            if (!lastReload || (now - parseInt(lastReload, 10)) > 10000) {
+              sessionStorage.setItem(key, now.toString());
+              window.location.reload(true);
+            }
           }
         }
       }, true);
