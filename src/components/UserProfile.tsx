@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Trophy, ThumbsUp, ExternalLink, Calendar, Mail, Flame, Award, Trash2, Zap, Sparkles } from 'lucide-react';
-import { Game, UserStreakData } from '../types';
+import { X, Trophy, ThumbsUp, ExternalLink, Calendar, Mail, Flame, Award, Trash2, Zap, Sparkles, Coins, ShoppingBag, Palette } from 'lucide-react';
+import { Game, UserStreakData, UserProfileData } from '../types';
+import { getNameColorStyle, getBackgroundThemeStyle } from '../lib/shopData';
 import { User } from 'firebase/auth';
 
 interface UserProfileProps {
@@ -11,7 +12,9 @@ interface UserProfileProps {
   games: Game[];
   userVotes: Record<string, boolean>;
   userStreak?: UserStreakData | null;
+  profileData?: UserProfileData;
   onVote: (gameId: string) => Promise<void>;
+  onOpenShop?: () => void;
 }
 
 export default function UserProfile({ 
@@ -21,7 +24,9 @@ export default function UserProfile({
   games, 
   userVotes, 
   userStreak,
-  onVote 
+  profileData,
+  onVote,
+  onOpenShop
 }: UserProfileProps) {
 
   // Filter games that this user has voted for
@@ -132,7 +137,7 @@ export default function UserProfile({
 
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight truncate">
+                    <h2 className={`text-xl sm:text-2xl font-black tracking-tight truncate ${getNameColorStyle(profileData?.equippedColor).className}`}>
                       {user.displayName || 'Anonymous Voter'}
                     </h2>
                     <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider ${voterTier.color}`}>
@@ -150,6 +155,34 @@ export default function UserProfile({
                     Voter since {accountCreatedDate}
                   </p>
                 </div>
+              </div>
+
+              {/* 🪙 BLOXCOINS & COSMETIC SUMMARY BAR */}
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-amber-500/10 via-zinc-900 to-zinc-900 p-4 rounded-2xl border border-amber-500/30">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold">
+                    <Coins size={20} />
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">BloxCoins Balance</div>
+                    <div className="text-lg font-black text-white">
+                      {(profileData?.coins || 0).toLocaleString()} Coins 🪙
+                    </div>
+                  </div>
+                </div>
+
+                {onOpenShop && (
+                  <button
+                    onClick={() => {
+                      onClose();
+                      onOpenShop();
+                    }}
+                    className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 px-4 py-2 text-xs font-bold text-black hover:from-amber-400 hover:to-yellow-400 transition-all shadow-md active:scale-95 shrink-0"
+                  >
+                    <ShoppingBag size={15} />
+                    Open Cosmetic Shop
+                  </button>
+                )}
               </div>
 
               {/* 🔥 VOTING STREAK PROMINENT BADGE & CARD */}

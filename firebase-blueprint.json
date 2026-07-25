@@ -54,6 +54,36 @@
       },
       "required": ["senderUid", "senderEmail", "senderDisplayName", "text", "timestamp"]
     },
+    "PublicChatMessage": {
+      "title": "PublicChatMessage",
+      "description": "Public chat messages visible to everyone.",
+      "type": "object",
+      "properties": {
+        "senderUid": { "type": "string" },
+        "senderDisplayName": { "type": "string" },
+        "senderPhotoURL": { "type": "string" },
+        "senderColor": { "type": "string" },
+        "senderTheme": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderUid", "senderDisplayName", "text", "timestamp"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile metadata including coins and cosmetic inventory.",
+      "type": "object",
+      "properties": {
+        "coins": { "type": "number" },
+        "equippedColor": { "type": "string" },
+        "purchasedColors": { "type": "array", "items": { "type": "string" } },
+        "equippedTheme": { "type": "string" },
+        "purchasedThemes": { "type": "array", "items": { "type": "string" } },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "lastDailyBonusDate": { "type": "string" }
+      }
+    },
     "UpdateLog": {
       "title": "UpdateLog",
       "description": "Public update log or patch note entry published by administrators.",
@@ -90,6 +120,14 @@
     "/updateLogs/{logId}": {
       "schema": "UpdateLog",
       "description": "Public site update and patch notes."
+    },
+    "/publicChat/{messageId}": {
+      "schema": "PublicChatMessage",
+      "description": "Public global live chat room."
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile document containing coins and cosmetics."
     }
   }
 }

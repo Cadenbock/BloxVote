@@ -11,7 +11,8 @@ import {
   deleteDoc,
   updateDoc,
   serverTimestamp,
-  limit
+  limit,
+  increment
 } from 'firebase/firestore';
 import {
   Shield,
@@ -41,7 +42,11 @@ import {
   Edit3,
   Bug,
   Scale,
-  Zap
+  Zap,
+  Coins,
+  Hammer,
+  Ban,
+  ShieldAlert
 } from 'lucide-react';
 import {
   BarChart,
@@ -56,7 +61,7 @@ import {
   Pie
 } from 'recharts';
 import { db, auth } from '../firebase';
-import { Game, Activity, AdminUser, AdminChatMessage, UpdateLog } from '../types';
+import { Game, Activity, AdminUser, AdminChatMessage, UpdateLog, ChatFlag } from '../types';
 import { useToast } from './Toast';
 import { logActivity } from '../lib/activity';
 import { cn } from '../lib/utils';
@@ -68,7 +73,7 @@ interface AdminDashboardProps {
   onVote: (gameId: string) => Promise<void>;
 }
 
-type AdminTab = 'overview' | 'games' | 'announcement' | 'updates' | 'chat' | 'admins' | 'activity';
+type AdminTab = 'overview' | 'games' | 'coins' | 'announcement' | 'updates' | 'chat' | 'admins' | 'activity';
 
 export default function AdminDashboard({ isOpen, onClose, games, onVote }: AdminDashboardProps) {
   const { toast } = useToast();
@@ -76,6 +81,14 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
   const [activities, setActivities] = useState<Activity[]>([]);
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [searchGameQuery, setSearchGameQuery] = useState('');
+
+  // User Coins & Economy State
+  const [userProfiles, setUserProfiles] = useState<any[]>([]);
+  const [searchUserQuery, setSearchUserQuery] = useState('');
+  const [isGrantingCoins, setIsGrantingCoins] = useState<string | null>(null);
+  const [manualGrantUid, setManualGrantUid] = useState('');
+  const [manualGrantName, setManualGrantName] = useState('');
+  const [manualGrantAmount, setManualGrantAmount] = useState<number>(100);
   
   // Global Announcement state
   const [announcementMessage, setAnnouncementMessage] = useState('');
@@ -89,7 +102,15 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
   const [chatMessages, setChatMessages] = useState<AdminChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isSendingChat, setIsSendingChat] = useState(false);
+  const [chatSubTab, setChatSubTab] = useState<'staff' | 'flags'>('staff');
+  const [chatFlags, setChatFlags] = useState<ChatFlag[]>([]);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  // User Ban State
+  const [bannedUsersMap, setBannedUsersMap] = useState<Record<string, any>>({});
+  const [banningUser, setBanningUser] = useState<{ uid: string; displayName: string; reason?: string } | null>(null);
+  const [banDurationMinutes, setBanDurationMinutes] = useState<number>(60); // default 60m (1 hour)
+  const [banReasonInput, setBanReasonInput] = useState<string>('Violation of community chat guidelines');
 
   // Update Logs state
   const [updateLogs, setUpdateLogs] = useState<UpdateLog[]>([]);
@@ -110,6 +131,151 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
 
   const currentUser = auth.currentUser;
   const SUPER_ADMIN_EMAIL = 'mondo7108@gmail.com';
+
+  // Real-time Users Listener for Economy Tab
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'coins') return;
+
+    const usersQuery = query(collection(db, 'users'), limit(50));
+    const unsubscribe = onSnapshot(usersQuery, (snapshot) => {
+      const list = snapshot.docs.map(d => ({
+        uid: d.id,
+        ...d.data()
+      }));
+      setUserProfiles(list);
+    }, (err) => {
+      console.warn('User profiles listener warning:', err);
+    });
+
+    return () => unsubscribe();
+  }, [isOpen, activeTab]);
+
+  // Real-time Chat Flags Listener
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const flagsQuery = query(collection(db, 'chatFlags'), orderBy('timestamp', 'desc'), limit(50));
+    const unsubscribe = onSnapshot(flagsQuery, (snapshot) => {
+      const list: ChatFlag[] = snapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      } as ChatFlag));
+      setChatFlags(list);
+    }, (err) => {
+      console.warn('Chat flags listener warning:', err);
+    });
+
+    return () => unsubscribe();
+  }, [isOpen]);
+
+  // Real-time Banned Users Listener
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const unsubscribe = onSnapshot(collection(db, 'bannedUsers'), (snapshot) => {
+      const map: Record<string, any> = {};
+      snapshot.docs.forEach((d) => {
+        map[d.id] = { id: d.id, ...d.data() };
+      });
+      setBannedUsersMap(map);
+    }, (err) => {
+      console.warn('Banned users listener warning:', err);
+    });
+
+    return () => unsubscribe();
+  }, [isOpen]);
+
+  const handleDeleteChatFlag = async (flagId: string) => {
+    try {
+      await deleteDoc(doc(db, 'chatFlags', flagId));
+      toast('Flag alert dismissed.', 'info');
+    } catch (err: any) {
+      toast(`Could not delete flag: ${err.message}`, 'error');
+    }
+  };
+
+  const handleBanUser = async (targetUid: string, targetDisplayName: string, durationMinutes: number, reason: string) => {
+    if (!targetUid) return;
+    try {
+      const now = Date.now();
+      const bannedUntil = durationMinutes === -1 ? -1 : now + durationMinutes * 60 * 1000;
+
+      const banData = {
+        bannedUntil,
+        banReason: reason || 'Violation of community chat guidelines',
+        bannedAt: serverTimestamp(),
+        bannedBy: currentUser?.displayName || currentUser?.email || 'Admin',
+        userDisplayName: targetDisplayName || 'Player',
+        userUid: targetUid
+      };
+
+      await setDoc(doc(db, 'bannedUsers', targetUid), banData);
+      await setDoc(doc(db, 'users', targetUid), {
+        isBanned: true,
+        bannedUntil,
+        banReason: reason || 'Violation of community chat guidelines'
+      }, { merge: true });
+
+      const durationLabel = durationMinutes === -1 ? 'permanently' : `for ${durationMinutes} minutes`;
+      await logActivity(
+        'admin_add',
+        'User Banned 🔨',
+        `${currentUser?.displayName || 'Admin'} banned ${targetDisplayName || targetUid} ${durationLabel}`
+      );
+
+      toast(`Successfully banned ${targetDisplayName || 'user'} ${durationLabel}! 🔨`, 'success');
+      setBanningUser(null);
+    } catch (err: any) {
+      console.error('Ban error:', err);
+      toast(`Failed to ban user: ${err.message}`, 'error');
+    }
+  };
+
+  const handleUnbanUser = async (targetUid: string, targetDisplayName: string) => {
+    try {
+      await deleteDoc(doc(db, 'bannedUsers', targetUid));
+      await setDoc(doc(db, 'users', targetUid), {
+        isBanned: false,
+        bannedUntil: null,
+        banReason: null
+      }, { merge: true });
+
+      await logActivity(
+        'admin_remove',
+        'User Unbanned 🕊️',
+        `${currentUser?.displayName || 'Admin'} unbanned ${targetDisplayName || targetUid}`
+      );
+
+      toast(`Unbanned ${targetDisplayName || 'user'}.`, 'success');
+    } catch (err: any) {
+      toast(`Failed to unban user: ${err.message}`, 'error');
+    }
+  };
+
+  const handleGrantCoins = async (targetUid: string, targetDisplayName: string, amount: number) => {
+    if (!targetUid || amount === 0) return;
+    setIsGrantingCoins(targetUid);
+    try {
+      const userRef = doc(db, 'users', targetUid);
+      await setDoc(userRef, {
+        coins: increment(amount),
+        displayName: targetDisplayName || 'Player'
+      }, { merge: true });
+
+      await logActivity(
+        'admin_grant_coins',
+        'Granted BloxCoins',
+        `${currentUser?.displayName || 'Admin'} ${amount >= 0 ? 'added' : 'deducted'} ${Math.abs(amount)} BloxCoins ${amount >= 0 ? 'to' : 'from'} ${targetDisplayName || targetUid}`
+      );
+
+      toast(`Successfully ${amount >= 0 ? 'added' : 'deducted'} ${Math.abs(amount)} BloxCoins ${amount >= 0 ? 'to' : 'from'} ${targetDisplayName || 'user'}! 🪙`, 'success');
+    } catch (err: any) {
+      console.error('Error granting coins:', err);
+      toast(`Failed to update coins: ${err.message}`, 'error');
+    } finally {
+      setIsGrantingCoins(null);
+    }
+  };
 
   // Real-time Update Logs listener
   useEffect(() => {
@@ -629,6 +795,19 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
               </button>
 
               <button
+                onClick={() => setActiveTab('coins')}
+                className={cn(
+                  'flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold transition-all shrink-0 whitespace-nowrap',
+                  activeTab === 'coins'
+                    ? 'bg-amber-500 text-black shadow-md'
+                    : 'text-amber-400 hover:text-amber-300 hover:bg-zinc-850'
+                )}
+              >
+                <Coins size={14} className="fill-amber-400" />
+                User Coins
+              </button>
+
+              <button
                 onClick={() => setActiveTab('announcement')}
                 className={cn(
                   'flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold transition-all relative shrink-0 whitespace-nowrap',
@@ -672,12 +851,16 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
                 )}
               >
                 <MessageSquare size={14} />
-                Admin Chat
-                {chatMessages.length > 0 && (
+                Staff Chat & Flags
+                {chatFlags.length > 0 ? (
+                  <span className="flex h-4.5 min-w-[18px] items-center justify-center rounded-full bg-rose-500 text-[10px] text-white px-1 font-extrabold animate-pulse shadow-sm" title={`${chatFlags.length} flagged chat violations`}>
+                    {chatFlags.length}
+                  </span>
+                ) : chatMessages.length > 0 ? (
                   <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 text-[10px] text-white px-1 font-extrabold">
                     {chatMessages.length > 99 ? '99+' : chatMessages.length}
                   </span>
-                )}
+                ) : null}
               </button>
 
               <button
@@ -1046,6 +1229,214 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
                       <p className="text-xs text-zinc-600 mt-1">Try refining your search query</p>
                     </div>
                   )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* USER COINS & ECONOMY TAB */}
+            {activeTab === 'coins' && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-6"
+              >
+                {/* Header & Quick Summary */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-850 pb-4">
+                  <div>
+                    <h3 className="text-lg font-black text-white flex items-center gap-2">
+                      <Coins className="text-amber-400 fill-amber-400" size={20} />
+                      BloxCoins Economy & User Management
+                    </h3>
+                    <p className="text-xs text-zinc-400">
+                      Grant or deduct BloxCoins for any user account on the platform
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={14} />
+                      <input
+                        type="text"
+                        placeholder="Search players..."
+                        value={searchUserQuery}
+                        onChange={(e) => setSearchUserQuery(e.target.value)}
+                        className="rounded-xl bg-zinc-900 border border-zinc-800 pl-9 pr-3 py-2 text-xs text-white placeholder-zinc-500 focus:border-amber-500 focus:outline-none w-48 sm:w-64"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Manual Grant by UID or Name */}
+                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 sm:p-5">
+                  <h4 className="text-sm font-extrabold text-amber-300 flex items-center gap-2 mb-3">
+                    <Plus size={16} /> Direct Coin Grant by UID or Username
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    <input
+                      type="text"
+                      placeholder="User Firebase UID (e.g. 9xJ2kL...)"
+                      value={manualGrantUid}
+                      onChange={(e) => setManualGrantUid(e.target.value)}
+                      className="rounded-xl bg-zinc-900 border border-zinc-800 p-2.5 text-xs text-white placeholder-zinc-600 focus:border-amber-500 focus:outline-none"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Display Name (optional)"
+                      value={manualGrantName}
+                      onChange={(e) => setManualGrantName(e.target.value)}
+                      className="rounded-xl bg-zinc-900 border border-zinc-800 p-2.5 text-xs text-white placeholder-zinc-600 focus:border-amber-500 focus:outline-none"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Amount (+100, -50)"
+                      value={manualGrantAmount}
+                      onChange={(e) => setManualGrantAmount(parseInt(e.target.value) || 0)}
+                      className="rounded-xl bg-zinc-900 border border-zinc-800 p-2.5 text-xs text-white placeholder-zinc-600 focus:border-amber-500 focus:outline-none font-bold text-amber-300"
+                    />
+                    <button
+                      onClick={() => {
+                        if (!manualGrantUid.trim()) {
+                          toast('Please enter a target User UID.', 'error');
+                          return;
+                        }
+                        handleGrantCoins(manualGrantUid.trim(), manualGrantName.trim(), manualGrantAmount);
+                        setManualGrantUid('');
+                        setManualGrantName('');
+                      }}
+                      disabled={!manualGrantUid.trim() || isGrantingCoins === manualGrantUid}
+                      className="rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black font-extrabold text-xs p-2.5 transition-all shadow-md active:scale-95 disabled:opacity-40"
+                    >
+                      {isGrantingCoins === manualGrantUid ? 'Granting...' : `Grant ${manualGrantAmount >= 0 ? '+' : ''}${manualGrantAmount} Coins 🪙`}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Loaded Users Table */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs text-zinc-400 px-1">
+                    <span>Registered User Accounts ({userProfiles.length})</span>
+                    <span className="text-zinc-500 text-[11px]">Click buttons to quickly adjust balance</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3">
+                    {userProfiles
+                      .filter(u =>
+                        (u.displayName || '').toLowerCase().includes(searchUserQuery.toLowerCase()) ||
+                        (u.uid || '').toLowerCase().includes(searchUserQuery.toLowerCase())
+                      )
+                      .map((usr) => {
+                        const currentCoins = usr.coins || 0;
+                        const isSelected = isGrantingCoins === usr.uid;
+                        const isBanned = bannedUsersMap[usr.uid] && (
+                          bannedUsersMap[usr.uid].bannedUntil === -1 ||
+                          bannedUsersMap[usr.uid].bannedUntil > Date.now()
+                        );
+
+                        return (
+                          <div
+                            key={usr.uid}
+                            className={cn(
+                              "flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border p-4 transition-all",
+                              isBanned
+                                ? "border-rose-500/40 bg-rose-500/5"
+                                : "border-zinc-800 bg-zinc-900/40 hover:border-zinc-700"
+                            )}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              {usr.photoURL ? (
+                                <img src={usr.photoURL} alt="" className="h-10 w-10 rounded-full object-cover border border-zinc-700" />
+                              ) : (
+                                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold text-xs uppercase shrink-0">
+                                  {(usr.displayName || 'U').substring(0, 2)}
+                                </div>
+                              )}
+
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-bold text-white text-sm truncate">{usr.displayName || 'Unnamed Player'}</span>
+                                  <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full font-mono">
+                                    UID: {usr.uid.substring(0, 8)}...
+                                  </span>
+                                  {isBanned && (
+                                    <span className="bg-rose-500 text-black px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-xs">
+                                      <Hammer size={10} /> Banned
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 text-xs text-amber-400 font-bold mt-0.5">
+                                  <Coins size={13} className="fill-amber-400" />
+                                  <span>{currentCoins.toLocaleString()} BloxCoins</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Quick Action Buttons */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <button
+                                onClick={() => handleGrantCoins(usr.uid, usr.displayName, 50)}
+                                disabled={isSelected}
+                                className="rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-2.5 py-1.5 text-xs font-bold text-amber-300 transition-all active:scale-95"
+                              >
+                                +50 🪙
+                              </button>
+                              <button
+                                onClick={() => handleGrantCoins(usr.uid, usr.displayName, 100)}
+                                disabled={isSelected}
+                                className="rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-2.5 py-1.5 text-xs font-bold text-amber-300 transition-all active:scale-95"
+                              >
+                                +100 🪙
+                              </button>
+                              <button
+                                onClick={() => handleGrantCoins(usr.uid, usr.displayName, 500)}
+                                disabled={isSelected}
+                                className="rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 px-2.5 py-1.5 text-xs font-black text-amber-200 transition-all active:scale-95"
+                              >
+                                +500 🪙
+                              </button>
+                              <button
+                                onClick={() => handleGrantCoins(usr.uid, usr.displayName, 1000)}
+                                disabled={isSelected}
+                                className="rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 px-3 py-1.5 text-xs font-black text-black transition-all active:scale-95 shadow-sm"
+                              >
+                                +1k 🪙
+                              </button>
+
+                              {isBanned ? (
+                                <button
+                                  onClick={() => handleUnbanUser(usr.uid, usr.displayName)}
+                                  className="rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 px-3 py-1.5 text-xs font-bold transition-all flex items-center gap-1"
+                                  title="Lift Ban"
+                                >
+                                  <CheckCircle2 size={13} /> Unban
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    setBanReasonInput('Admin decision');
+                                    setBanningUser({
+                                      uid: usr.uid,
+                                      displayName: usr.displayName || 'Player'
+                                    });
+                                  }}
+                                  className="rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 px-3 py-1.5 text-xs font-bold transition-all flex items-center gap-1"
+                                  title="Ban player from chat"
+                                >
+                                  <Hammer size={13} /> Ban
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                    {userProfiles.length === 0 && (
+                      <div className="text-center py-12 border border-dashed border-zinc-800 rounded-2xl">
+                        <Coins size={32} className="text-zinc-600 mx-auto mb-2" />
+                        <p className="text-sm font-bold text-zinc-400">No user accounts loaded yet</p>
+                        <p className="text-xs text-zinc-600 mt-1">Use the Direct Grant form above to grant coins by UID anytime!</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -1423,139 +1814,297 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
               </motion.div>
             )}
 
-            {/* ADMIN CHAT TAB */}
+            {/* ADMIN CHAT & FLAGS TAB */}
             {activeTab === 'chat' && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="flex flex-col h-[55vh] min-h-[320px] max-h-[520px] rounded-2xl sm:rounded-3xl border border-zinc-800 bg-zinc-900/40 overflow-hidden"
+                className="flex flex-col h-[60vh] min-h-[400px] max-h-[600px] rounded-2xl sm:rounded-3xl border border-zinc-800 bg-zinc-900/40 overflow-hidden"
               >
-                {/* Chat Header */}
-                <div className="flex items-center justify-between border-b border-zinc-800/80 bg-zinc-950/60 p-3.5 sm:px-6 sm:py-4 gap-2">
-                  <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 pr-1">
+                {/* Chat Header & Sub-tab navigation */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-zinc-800/80 bg-zinc-950/80 p-3.5 sm:px-6 sm:py-4 gap-3 shrink-0">
+                  <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                     <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
                       <MessageSquare size={18} className="sm:w-5 sm:h-5" />
                     </div>
                     <div className="min-w-0">
                       <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5 truncate">
-                        Staff & Admin Chat
+                        Staff Chat & Global Moderation
                         <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
                       </h3>
                       <p className="text-[11px] sm:text-xs text-zinc-400 truncate">
-                        Private real-time channel for BloxVote staff
+                        Private staff channel & real-time chat filter violation logs
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-mono text-zinc-400 bg-zinc-900 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl border border-zinc-800 shrink-0">
-                    <Users size={12} className="text-blue-400" />
-                    <span>{admins.length} Staff</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setChatSubTab('staff')}
+                      className={cn(
+                        'px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5',
+                        chatSubTab === 'staff'
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800'
+                      )}
+                    >
+                      <Users size={13} />
+                      Staff Chat
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setChatSubTab('flags')}
+                      className={cn(
+                        'px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 relative',
+                        chatSubTab === 'flags'
+                          ? 'bg-rose-600 text-white shadow-sm'
+                          : 'bg-zinc-900 text-rose-400 hover:bg-zinc-850 border border-rose-500/30'
+                      )}
+                    >
+                      <AlertTriangle size={13} />
+                      Chat Flags
+                      {chatFlags.length > 0 && (
+                        <span className="bg-rose-500 text-white px-1.5 py-0.5 rounded-full text-[10px] font-black animate-pulse">
+                          {chatFlags.length}
+                        </span>
+                      )}
+                    </button>
                   </div>
                 </div>
 
-                {/* Chat Messages Feed */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                  {chatMessages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-center p-8 space-y-3">
-                      <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-zinc-800/80 text-zinc-500 border border-zinc-700/50">
-                        <MessageSquare size={28} />
-                      </div>
-                      <p className="text-sm font-bold text-zinc-300">No staff messages yet</p>
-                      <p className="text-xs text-zinc-500 max-w-sm">
-                        Start a conversation with fellow administrators. Share game feature ideas, operational notes, or site status updates.
-                      </p>
+                {/* Sub-tab 1: Chat Filter Flags */}
+                {chatSubTab === 'flags' ? (
+                  <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3 bg-zinc-950/60">
+                    <div className="flex items-center justify-between text-xs text-zinc-400 pb-1">
+                      <span>Prohibited Terms & Harassment Alerts ({chatFlags.length})</span>
+                      <span className="text-[11px] text-zinc-500 font-mono">Real-time chat filter detection</span>
                     </div>
-                  ) : (
-                    chatMessages.map((msg) => {
-                      const isSelf = msg.senderUid === currentUser?.uid || msg.senderEmail === currentUser?.email;
-                      return (
-                        <div
-                          key={msg.id}
-                          className={cn(
-                            'flex items-start gap-3 max-w-[82%]',
-                            isSelf ? 'ml-auto flex-row-reverse' : 'mr-auto'
-                          )}
-                        >
-                          {/* Avatar */}
-                          {msg.senderPhotoURL ? (
-                            <img
-                              src={msg.senderPhotoURL}
-                              alt={msg.senderDisplayName}
-                              className="h-8 w-8 rounded-full border border-zinc-700 object-cover shrink-0 mt-0.5"
-                            />
-                          ) : (
-                            <div className={cn(
-                              'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black uppercase border mt-0.5',
-                              isSelf
-                                ? 'bg-blue-600 text-white border-blue-400/30'
-                                : 'bg-zinc-800 text-zinc-300 border-zinc-700'
-                            )}>
-                              {msg.senderDisplayName ? msg.senderDisplayName.charAt(0) : 'A'}
-                            </div>
-                          )}
 
-                          {/* Message bubble */}
-                          <div className="flex flex-col space-y-1 min-w-0">
-                            <div className={cn(
-                              'flex items-center gap-2 text-[11px]',
-                              isSelf ? 'justify-end text-blue-300' : 'text-zinc-400'
-                            )}>
-                              <span className="font-bold text-zinc-200">
-                                {isSelf ? 'You' : msg.senderDisplayName}
-                              </span>
-                              <span className="text-[10px] text-zinc-500 font-mono">
-                                {formatTimeAgo(msg.timestamp)}
-                              </span>
-                            </div>
+                    {chatFlags.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full text-center p-12 space-y-2 text-zinc-500 border border-dashed border-zinc-800 rounded-2xl">
+                        <CheckCircle2 size={36} className="text-emerald-500 mb-1" />
+                        <p className="text-sm font-bold text-zinc-300">No Chat Filter Violations</p>
+                        <p className="text-xs text-zinc-500">All global chat messages are adhering to community guidelines!</p>
+                      </div>
+                    ) : (
+                      chatFlags.map((flag) => {
+                        const isBanned = bannedUsersMap[flag.userUid] && (
+                          bannedUsersMap[flag.userUid].bannedUntil === -1 ||
+                          bannedUsersMap[flag.userUid].bannedUntil > Date.now()
+                        );
 
-                            <div className={cn(
-                              'group relative rounded-2xl px-4 py-2.5 text-xs sm:text-sm leading-relaxed break-words shadow-sm',
-                              isSelf
-                                ? 'bg-blue-600 text-white rounded-tr-none'
-                                : 'bg-zinc-800/90 text-zinc-100 border border-zinc-750 rounded-tl-none'
-                            )}>
-                              {msg.text}
+                        return (
+                          <div
+                            key={flag.id}
+                            className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-4 space-y-3 relative transition-all hover:border-rose-500/50"
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                              <div className="flex items-center gap-3">
+                                {flag.userPhotoURL ? (
+                                  <img src={flag.userPhotoURL} alt="" className="h-9 w-9 rounded-full object-cover border border-rose-500/40" />
+                                ) : (
+                                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-500/20 text-rose-300 font-bold text-xs border border-rose-500/30">
+                                    {(flag.userDisplayName || 'U').substring(0, 2)}
+                                  </div>
+                                )}
+                                <div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-extrabold text-white text-sm">{flag.userDisplayName || 'Unknown Player'}</span>
+                                    <span className="text-[10px] font-mono bg-zinc-900 border border-zinc-800 text-zinc-400 px-2 py-0.5 rounded-md">
+                                      UID: {flag.userUid?.substring(0, 8)}...
+                                    </span>
+                                    {isBanned ? (
+                                      <span className="bg-rose-500 text-black px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-xs">
+                                        <Hammer size={10} /> Currently Banned
+                                      </span>
+                                    ) : flag.wasBlocked ? (
+                                      <span className="bg-red-500/20 text-red-400 border border-red-500/40 px-2 py-0.5 rounded-full text-[10px] font-black uppercase">
+                                        Fully Blocked
+                                      </span>
+                                    ) : (
+                                      <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full text-[10px] font-black uppercase">
+                                        Auto-Censored
+                                      </span>
+                                    )}
+                                  </div>
 
-                              {/* Delete message option */}
-                              {(isSelf || currentUser?.email === SUPER_ADMIN_EMAIL) && (
+                                  {/* Flagged Terms Badges */}
+                                  <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                                    <span className="text-[11px] font-bold text-rose-400">Detected terms:</span>
+                                    {flag.flaggedWords.map((word, i) => (
+                                      <span key={i} className="bg-rose-500 text-black font-black text-[10px] px-2 py-0.5 rounded-md uppercase tracking-wider shadow-xs">
+                                        "{word}"
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                                <span className="text-[10px] font-mono text-zinc-500 mr-1">
+                                  {formatTimeAgo(flag.timestamp)}
+                                </span>
+
+                                {isBanned ? (
+                                  <button
+                                    onClick={() => handleUnbanUser(flag.userUid, flag.userDisplayName)}
+                                    className="flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
+                                    title="Unban player"
+                                  >
+                                    <CheckCircle2 size={13} />
+                                    Unban
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => {
+                                      setBanReasonInput(`Prohibited terms in chat: [${flag.flaggedWords.join(', ')}]`);
+                                      setBanningUser({
+                                        uid: flag.userUid,
+                                        displayName: flag.userDisplayName || 'Player'
+                                      });
+                                    }}
+                                    className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-500 text-white shadow-md shadow-rose-950/40 px-3 py-1.5 rounded-xl text-xs font-black transition-all active:scale-95"
+                                  >
+                                    <Hammer size={13} />
+                                    Ban User
+                                  </button>
+                                )}
+
                                 <button
-                                  type="button"
-                                  onClick={() => handleDeleteChatMessage(msg.id)}
-                                  className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-red-400 p-1 rounded-lg shadow-md"
-                                  title="Delete message"
+                                  onClick={() => handleDeleteChatFlag(flag.id)}
+                                  className="p-1.5 rounded-lg bg-zinc-900 hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400 border border-zinc-800 transition-colors"
+                                  title="Dismiss Alert Log"
                                 >
-                                  <Trash2 size={12} />
+                                  <Trash2 size={14} />
                                 </button>
-                              )}
+                              </div>
+                            </div>
+
+                            {/* Original vs Filtered Text Box */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-2 border-t border-rose-500/20">
+                              <div className="rounded-xl bg-zinc-950 p-2.5 border border-zinc-800">
+                                <span className="text-[10px] font-bold uppercase text-rose-400 block mb-1">Attempted Message:</span>
+                                <p className="text-zinc-200 font-mono break-words">{flag.originalText}</p>
+                              </div>
+                              <div className="rounded-xl bg-zinc-950 p-2.5 border border-zinc-800">
+                                <span className="text-[10px] font-bold uppercase text-emerald-400 block mb-1">Filtered Output:</span>
+                                <p className="text-zinc-300 font-mono break-words">{flag.filteredText || '(Entirely Blocked)'}</p>
+                              </div>
                             </div>
                           </div>
+                        );
+                      })
+                    )}
+                  </div>
+                ) : (
+                  /* Sub-tab 2: Staff Chat Feed & Form */
+                  <>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                      {chatMessages.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-center p-8 space-y-3">
+                          <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-zinc-800/80 text-zinc-500 border border-zinc-700/50">
+                            <MessageSquare size={28} />
+                          </div>
+                          <p className="text-sm font-bold text-zinc-300">No staff messages yet</p>
+                          <p className="text-xs text-zinc-500 max-w-sm">
+                            Start a conversation with fellow administrators. Share game feature ideas, operational notes, or site status updates.
+                          </p>
                         </div>
-                      );
-                    })
-                  )}
-                  <div ref={chatEndRef} />
-                </div>
+                      ) : (
+                        chatMessages.map((msg) => {
+                          const isSelf = msg.senderUid === currentUser?.uid || msg.senderEmail === currentUser?.email;
+                          return (
+                            <div
+                              key={msg.id}
+                              className={cn(
+                                'flex items-start gap-3 max-w-[82%]',
+                                isSelf ? 'ml-auto flex-row-reverse' : 'mr-auto'
+                              )}
+                            >
+                              {/* Avatar */}
+                              {msg.senderPhotoURL ? (
+                                <img
+                                  src={msg.senderPhotoURL}
+                                  alt={msg.senderDisplayName}
+                                  className="h-8 w-8 rounded-full border border-zinc-700 object-cover shrink-0 mt-0.5"
+                                />
+                              ) : (
+                                <div className={cn(
+                                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black uppercase border mt-0.5',
+                                  isSelf
+                                    ? 'bg-blue-600 text-white border-blue-400/30'
+                                    : 'bg-zinc-800 text-zinc-300 border-zinc-700'
+                                )}>
+                                  {msg.senderDisplayName ? msg.senderDisplayName.charAt(0) : 'A'}
+                                </div>
+                              )}
 
-                {/* Input Form */}
-                <form
-                  onSubmit={handleSendChatMessage}
-                  className="border-t border-zinc-800 bg-zinc-950/80 p-4 flex items-center gap-3"
-                >
-                  <input
-                    type="text"
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    placeholder="Type a staff message..."
-                    className="flex-1 rounded-2xl bg-zinc-900 border border-zinc-800 px-4 py-3 text-xs sm:text-sm text-white placeholder:text-zinc-500 focus:border-blue-500 focus:outline-none transition-all"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!chatInput.trim() || isSendingChat}
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40 disabled:hover:bg-blue-600 transition-all shadow-md shadow-blue-900/20 active:scale-95"
-                  >
-                    <Send size={18} />
-                  </button>
-                </form>
+                              {/* Message bubble */}
+                              <div className="flex flex-col space-y-1 min-w-0">
+                                <div className={cn(
+                                  'flex items-center gap-2 text-[11px]',
+                                  isSelf ? 'justify-end text-blue-300' : 'text-zinc-400'
+                                )}>
+                                  <span className="font-bold text-zinc-200">
+                                    {isSelf ? 'You' : msg.senderDisplayName}
+                                  </span>
+                                  <span className="text-[10px] text-zinc-500 font-mono">
+                                    {formatTimeAgo(msg.timestamp)}
+                                  </span>
+                                </div>
+
+                                <div className={cn(
+                                  'group relative rounded-2xl px-4 py-2.5 text-xs sm:text-sm leading-relaxed break-words shadow-sm',
+                                  isSelf
+                                    ? 'bg-blue-600 text-white rounded-tr-none'
+                                    : 'bg-zinc-800/90 text-zinc-100 border border-zinc-750 rounded-tl-none'
+                                )}>
+                                  {msg.text}
+
+                                  {/* Delete message option */}
+                                  {(isSelf || currentUser?.email === SUPER_ADMIN_EMAIL) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteChatMessage(msg.id)}
+                                      className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-red-400 p-1 rounded-lg shadow-md"
+                                      title="Delete message"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                      <div ref={chatEndRef} />
+                    </div>
+
+                    {/* Input Form */}
+                    <form
+                      onSubmit={handleSendChatMessage}
+                      className="border-t border-zinc-800 bg-zinc-950/80 p-4 flex items-center gap-3"
+                    >
+                      <input
+                        type="text"
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        placeholder="Type a staff message..."
+                        className="flex-1 rounded-2xl bg-zinc-900 border border-zinc-800 px-4 py-3 text-xs sm:text-sm text-white placeholder:text-zinc-500 focus:border-blue-500 focus:outline-none transition-all"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!chatInput.trim() || isSendingChat}
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40 disabled:hover:bg-blue-600 transition-all shadow-md shadow-blue-900/20 active:scale-95"
+                      >
+                        <Send size={18} />
+                      </button>
+                    </form>
+                  </>
+                )}
               </motion.div>
             )}
 
@@ -1866,6 +2415,115 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
                   >
                     Revoke
                   </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Modal: Ban User */}
+        <AnimatePresence>
+          {banningUser && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setBanningUser(null)}
+                className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+              />
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 15 }}
+                className="relative z-10 w-full max-w-md rounded-3xl border border-rose-500/30 bg-zinc-950 p-6 shadow-2xl"
+              >
+                <div className="flex items-center justify-between border-b border-zinc-800 pb-4 mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                      <Hammer size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-white">Issue Chat Ban 🔨</h3>
+                      <p className="text-xs text-zinc-400">
+                        Target player: <span className="text-rose-300 font-bold">{banningUser.displayName}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setBanningUser(null)}
+                    className="p-1 rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-900"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Select Ban Duration */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
+                      <Clock size={13} className="text-rose-400" />
+                      Ban Duration
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { label: '15 Mins', mins: 15 },
+                        { label: '1 Hour', mins: 60 },
+                        { label: '24 Hours', mins: 1440 },
+                        { label: '7 Days', mins: 10080 },
+                        { label: '30 Days', mins: 43200 },
+                        { label: 'Permanent', mins: -1 }
+                      ].map((opt) => (
+                        <button
+                          type="button"
+                          key={opt.mins}
+                          onClick={() => setBanDurationMinutes(opt.mins)}
+                          className={cn(
+                            'px-3 py-2 rounded-xl text-xs font-extrabold border transition-all text-center',
+                            banDurationMinutes === opt.mins
+                              ? 'bg-rose-600 text-white border-rose-400 shadow-md shadow-rose-950/50 scale-102'
+                              : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Ban Reason Input */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-zinc-300">
+                      Ban Reason (shown to user & logged)
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={banReasonInput}
+                      onChange={(e) => setBanReasonInput(e.target.value)}
+                      placeholder="e.g. Chat filter violation, harassment, or spamming..."
+                      className="w-full rounded-2xl bg-zinc-900 border border-zinc-800 p-3 text-xs text-white placeholder-zinc-600 focus:border-rose-500 focus:outline-none transition-all resize-none"
+                    />
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setBanningUser(null)}
+                      className="flex-1 rounded-2xl border border-zinc-800 bg-zinc-900 py-3 text-xs font-bold text-zinc-300 hover:bg-zinc-850 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBanUser(banningUser.uid, banningUser.displayName, banDurationMinutes, banReasonInput)}
+                      className="flex-1 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white py-3 text-xs font-black shadow-lg shadow-rose-950/50 transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                    >
+                      <Hammer size={15} />
+                      Confirm Ban 🔨
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             </div>

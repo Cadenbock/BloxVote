@@ -18,9 +18,9 @@ import {
   where
 } from "firebase/firestore";
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { Trophy, Plus, LogIn, LogOut, Gamepad2, Search, TrendingUp, AlertTriangle, BarChart3, CircleUser, Download, Shield, Star, Flame, Sparkles, FileText } from 'lucide-react';
+import { Trophy, Plus, LogIn, LogOut, Gamepad2, Search, TrendingUp, AlertTriangle, BarChart3, CircleUser, Download, Shield, Star, Flame, Sparkles, FileText, Coins, ShoppingBag, MessageSquare } from 'lucide-react';
 import { db, auth, signIn, logout } from './firebase';
-import { Game, UserStreakData, GlobalAnnouncement } from './types';
+import { Game, UserStreakData, GlobalAnnouncement, UserProfileData } from './types';
 import GameCard from './components/GameCard';
 import AddGameModal from './components/AddGameModal';
 import TopGamesChart from './components/TopGamesChart';
@@ -29,6 +29,9 @@ import AdminDashboard from './components/AdminDashboard';
 import FeaturedGamesBanner from './components/FeaturedGamesBanner';
 import AnnouncementBanner from './components/AnnouncementBanner';
 import UpdateLogsModal from './components/UpdateLogsModal';
+import ShopModal from './components/ShopModal';
+import PublicChat from './components/PublicChat';
+import { getNameColorStyle, getBackgroundThemeStyle, NameColorItem, BackgroundThemeItem } from './lib/shopData';
 import { useToast } from './components/Toast';
 import { logActivity } from './lib/activity';
 import { recordUserVotingStreak } from './lib/streak';
@@ -155,15 +158,70 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'votes' | 'newest'>('votes');
   const [isLoading, setIsLoading] = useState(true);
-  const [currentTab, setCurrentTab] = useState<'leaderboard' | 'analytics'>('leaderboard');
+  const [currentTab, setCurrentTab] = useState<'leaderboard' | 'analytics' | 'chat'>('leaderboard');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isShopOpen, setIsShopOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
   const [userStreak, setUserStreak] = useState<UserStreakData | null>(null);
   const [announcement, setAnnouncement] = useState<GlobalAnnouncement | null>(null);
   const [isUpdateLogsOpen, setIsUpdateLogsOpen] = useState(false);
+  const [previewThemeId, setPreviewThemeId] = useState<string | null>(null);
+  const [userProfileData, setUserProfileData] = useState<UserProfileData>({
+    coins: 50,
+    equippedColor: 'default',
+    purchasedColors: ['default'],
+    equippedTheme: 'default',
+    purchasedThemes: ['default'],
+  });
 
   const featuredGames = useMemo(() => games.filter(g => g.isFeatured), [games]);
+
+  // Realtime listener for User Profile (coins, cosmetics)
+  useEffect(() => {
+    if (!user) {
+      setUserProfileData({
+        coins: 50,
+        equippedColor: 'default',
+        purchasedColors: ['default'],
+        equippedTheme: 'default',
+        purchasedThemes: ['default'],
+      });
+      return;
+    }
+
+    const userRef = doc(db, 'users', user.uid);
+    const unsubscribe = onSnapshot(userRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setUserProfileData({
+          coins: typeof data.coins === 'number' ? data.coins : 50,
+          equippedColor: data.equippedColor || 'default',
+          purchasedColors: Array.isArray(data.purchasedColors) ? data.purchasedColors : ['default'],
+          equippedTheme: data.equippedTheme || 'default',
+          purchasedThemes: Array.isArray(data.purchasedThemes) ? data.purchasedThemes : ['default'],
+          displayName: data.displayName || user.displayName || '',
+          photoURL: data.photoURL || user.photoURL || '',
+          lastDailyBonusDate: data.lastDailyBonusDate || '',
+        });
+      } else {
+        const initialProfile = {
+          coins: 50,
+          equippedColor: 'default',
+          purchasedColors: ['default'],
+          equippedTheme: 'default',
+          purchasedThemes: ['default'],
+          displayName: user.displayName || '',
+          photoURL: user.photoURL || '',
+        };
+        setDoc(userRef, initialProfile, { merge: true }).catch(console.error);
+      }
+    }, (err) => {
+      console.warn("User profile listener warning:", err);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
 
   // Realtime listener for global announcement
   useEffect(() => {
@@ -450,6 +508,8 @@ function App() {
       const gameRef = doc(db, 'games', gameId);
       const userVoteRef = doc(db, 'users', user.uid, 'votes', gameId);
 
+      const userProfileRef = doc(db, 'users', user.uid);
+
       if (isVoted) {
         // Un-vote
         currentPath = `users/${user.uid}/votes/${gameId}`;
@@ -459,7 +519,13 @@ function App() {
         await updateDoc(gameRef, {
           votes: increment(-1)
         });
-        toast(`Retracted vote for ${gameName}`, 'info');
+
+        // Deduct 10 coins on unvote
+        await setDoc(userProfileRef, {
+          coins: increment(-10)
+        }, { merge: true });
+
+        toast(`Retracted vote for ${gameName} (-10 BloxCoins 🪙)`, 'info');
 
         await logActivity('unvote', 'Vote Retracted', `Retracted vote for "${gameName}"`, { gameId, gameName });
       } else {
@@ -474,12 +540,17 @@ function App() {
           votes: increment(1)
         });
 
+        // Add 10 coins on vote
+        await setDoc(userProfileRef, {
+          coins: increment(10)
+        }, { merge: true });
+
         // Record voting streak
         const streakResult = await recordUserVotingStreak(user.uid);
         if (streakResult.isNewStreakDay && streakResult.streakCount > 1) {
-          toast(`🔥 ${streakResult.streakCount} Day Voting Streak! Streak extended!`, 'success');
+          toast(`🔥 ${streakResult.streakCount} Day Voting Streak! (+10 BloxCoins 🪙)`, 'success');
         } else {
-          toast(`Successfully voted for ${gameName}! 🚀`, 'success');
+          toast(`Successfully voted for ${gameName}! (+10 BloxCoins 🪙)`, 'success');
         }
 
         await logActivity('vote', 'Voted for Experience', `Casted vote for "${gameName}"`, { gameId, gameName });
@@ -487,6 +558,85 @@ function App() {
     } catch (error: any) {
       handleFirestoreError(error, OperationType.WRITE, currentPath);
       toast(`Failed to update vote: ${error.message || 'Permission denied'}`, 'error');
+    }
+  };
+
+  // Shop Handlers
+  const handleBuyItem = async (type: 'color' | 'theme', item: NameColorItem | BackgroundThemeItem): Promise<boolean> => {
+    if (!user) {
+      signIn();
+      return false;
+    }
+
+    if (userProfileData.coins < item.price) {
+      toast(`Not enough BloxCoins! You need ${item.price} coins.`, 'error');
+      return false;
+    }
+
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      if (type === 'color') {
+        const updatedColors = Array.from(new Set([...userProfileData.purchasedColors, item.id]));
+        await setDoc(userRef, {
+          coins: increment(-item.price),
+          purchasedColors: updatedColors,
+          equippedColor: item.id,
+        }, { merge: true });
+        toast(`Purchased & equipped ${item.name}! 🎨`, 'success');
+      } else {
+        const updatedThemes = Array.from(new Set([...userProfileData.purchasedThemes, item.id]));
+        await setDoc(userRef, {
+          coins: increment(-item.price),
+          purchasedThemes: updatedThemes,
+          equippedTheme: item.id,
+        }, { merge: true });
+        toast(`Purchased & equipped ${item.name} theme! 🌌`, 'success');
+      }
+      return true;
+    } catch (err: any) {
+      console.error('Failed to buy item:', err);
+      toast('Transaction failed. Please try again.', 'error');
+      return false;
+    }
+  };
+
+  const handleEquipItem = async (type: 'color' | 'theme', itemId: string) => {
+    if (!user) return;
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      if (type === 'color') {
+        await setDoc(userRef, { equippedColor: itemId }, { merge: true });
+        const colorItem = getNameColorStyle(itemId);
+        toast(`Equipped ${colorItem.name}! ✨`, 'success');
+      } else {
+        await setDoc(userRef, { equippedTheme: itemId }, { merge: true });
+        const themeItem = getBackgroundThemeStyle(itemId);
+        toast(`Equipped ${themeItem.name} background! 🌌`, 'success');
+      }
+    } catch (err) {
+      console.error('Failed to equip item:', err);
+      toast('Failed to equip item.', 'error');
+    }
+  };
+
+  const handleClaimDailyBonus = async () => {
+    if (!user) return;
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (userProfileData.lastDailyBonusDate === todayStr) {
+      toast('You have already claimed today\'s bonus!', 'info');
+      return;
+    }
+
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      await setDoc(userRef, {
+        coins: increment(25),
+        lastDailyBonusDate: todayStr,
+      }, { merge: true });
+      toast('Claimed +25 Daily BloxCoins! 🎁', 'success');
+    } catch (err) {
+      console.error('Failed to claim bonus:', err);
+      toast('Failed to claim bonus.', 'error');
     }
   };
 
@@ -594,13 +744,19 @@ function App() {
     (game.creator || '').toLowerCase().includes((searchQuery || '').toLowerCase())
   );
 
+  const activeThemeId = previewThemeId || userProfileData.equippedTheme;
+  const backgroundThemeStyle = getBackgroundThemeStyle(activeThemeId);
+
   return (
-    <div className="min-h-screen bg-black text-zinc-100 selection:bg-blue-500/30 font-sans">
+    <div
+      style={backgroundThemeStyle.style}
+      className={`min-h-screen font-sans transition-all duration-500 ${backgroundThemeStyle.backgroundClass}`}
+    >
       {/* Navigation */}
       <nav className="sticky top-0 z-40 border-b border-zinc-800 bg-black/90 backdrop-blur-md">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex min-h-[4rem] py-2.5 items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 cursor-pointer" onClick={() => setCurrentTab('leaderboard')}>
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 shadow-lg shadow-blue-900/20 shrink-0">
                 <Gamepad2 className="text-white" size={20} />
               </div>
@@ -630,6 +786,17 @@ function App() {
                 Insights & Graphs
               </button>
               <button
+                onClick={() => setCurrentTab('chat')}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs sm:text-sm font-bold transition-all relative",
+                  currentTab === 'chat' ? "bg-blue-600 text-white shadow-md border border-blue-500/30" : "text-zinc-400 hover:text-zinc-200"
+                )}
+              >
+                <MessageSquare size={14} />
+                Global Chat
+                <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              </button>
+              <button
                 onClick={() => setIsUpdateLogsOpen(true)}
                 className="flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs sm:text-sm font-bold text-zinc-400 hover:text-white transition-all hover:bg-zinc-800/60"
                 title="View Release Notes & Patch Logs"
@@ -640,6 +807,16 @@ function App() {
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+              {/* Coins & Shop Pill */}
+              <button
+                onClick={() => setIsShopOpen(true)}
+                className="flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 px-3.5 py-1.5 text-xs font-black text-amber-300 transition-all hover:bg-amber-500/30 active:scale-95 shadow-md shadow-amber-950/30"
+                title="Open BloxCoins Shop & Customize"
+              >
+                <Coins size={15} className="text-amber-400 fill-amber-400" />
+                <span>{userProfileData.coins.toLocaleString()} Coins</span>
+              </button>
+
               {user ? (
                 <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
                   <div 
@@ -649,7 +826,7 @@ function App() {
                   >
                     <div className="text-right">
                       <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-widest">Logged in as</p>
-                      <p className="text-xs font-bold text-white group-hover:text-blue-400 transition-colors">{user.displayName}</p>
+                      <p className={`text-xs font-bold transition-colors ${getNameColorStyle(userProfileData.equippedColor).className}`}>{user.displayName}</p>
                     </div>
                     <img 
                       src={user.photoURL || ''} 
@@ -710,42 +887,51 @@ function App() {
         <AnnouncementBanner announcement={announcement} />
 
         {/* Hero Section */}
-        <div className="relative mb-8 sm:mb-10 overflow-hidden rounded-2xl sm:rounded-[2.5rem] bg-zinc-900 px-4 py-8 text-center sm:px-12 sm:py-12">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(37,99,235,0.15),transparent_50%)]" />
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="relative z-10"
-          >
-            <div className="mb-3 sm:mb-4 inline-flex items-center gap-1.5 sm:gap-2 rounded-full bg-blue-600/10 px-3 py-1 sm:px-4 text-xs sm:text-sm font-bold text-blue-400 border border-blue-500/20">
-              <TrendingUp size={14} className="sm:w-[15px] sm:h-[15px]" />
-              Trending in the Metaverse
-            </div>
-            <h1 className="mb-3 sm:mb-4 text-2xl font-black tracking-tight text-white sm:text-5xl md:text-6xl leading-tight">
-              Vote for your <span className="text-blue-500 italic">favorite</span> <br className="hidden sm:block" /> Roblox experience.
-            </h1>
-            <p className="mx-auto mb-6 max-w-2xl text-xs sm:text-base text-zinc-400 leading-relaxed">
-              Discover the most popular games on Roblox, voted by the community. 
-              Add your favorites and help them climb the leaderboard.
-            </p>
-            <div className="flex flex-wrap justify-center gap-3 sm:gap-4">
-              <button
-                onClick={() => user ? setIsAddModalOpen(true) : signIn()}
-                className="flex items-center gap-2 rounded-full bg-blue-600 px-5 py-2.5 sm:px-6 sm:py-3 text-xs sm:text-base font-bold text-white shadow-xl shadow-blue-900/20 transition-all hover:bg-blue-500 hover:scale-105 active:scale-95"
-              >
-                <Plus size={18} className="sm:w-5 sm:h-5" />
-                Add Your Favorite Game
-              </button>
-            </div>
-          </motion.div>
-        </div>
+        {currentTab !== 'chat' && (
+          <div className="relative mb-8 sm:mb-10 overflow-hidden rounded-2xl sm:rounded-[2.5rem] bg-zinc-900 px-4 py-8 text-center sm:px-12 sm:py-12">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(37,99,235,0.15),transparent_50%)]" />
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="relative z-10"
+            >
+              <div className="mb-3 sm:mb-4 inline-flex items-center gap-1.5 sm:gap-2 rounded-full bg-blue-600/10 px-3 py-1 sm:px-4 text-xs sm:text-sm font-bold text-blue-400 border border-blue-500/20">
+                <TrendingUp size={14} className="sm:w-[15px] sm:h-[15px]" />
+                Trending in the Metaverse
+              </div>
+              <h1 className="mb-3 sm:mb-4 text-2xl font-black tracking-tight text-white sm:text-5xl md:text-6xl leading-tight">
+                Vote for your <span className="text-blue-500 italic">favorite</span> <br className="hidden sm:block" /> Roblox experience.
+              </h1>
+              <p className="mx-auto mb-6 max-w-2xl text-xs sm:text-base text-zinc-400 leading-relaxed">
+                Discover the most popular games on Roblox, voted by the community. 
+                Earn BloxCoins by voting to buy custom name colors & background themes!
+              </p>
+              <div className="flex flex-wrap justify-center gap-3 sm:gap-4">
+                <button
+                  onClick={() => user ? setIsAddModalOpen(true) : signIn()}
+                  className="flex items-center gap-2 rounded-full bg-blue-600 px-5 py-2.5 sm:px-6 sm:py-3 text-xs sm:text-base font-bold text-white shadow-xl shadow-blue-900/20 transition-all hover:bg-blue-500 hover:scale-105 active:scale-95"
+                >
+                  <Plus size={18} className="sm:w-5 sm:h-5" />
+                  Add Your Favorite Game
+                </button>
+                <button
+                  onClick={() => setIsShopOpen(true)}
+                  className="flex items-center gap-2 rounded-full bg-amber-500/10 border border-amber-500/30 px-5 py-2.5 sm:px-6 sm:py-3 text-xs sm:text-base font-bold text-amber-300 transition-all hover:bg-amber-500/20 hover:scale-105 active:scale-95"
+                >
+                  <ShoppingBag size={18} />
+                  Open Cosmetic Shop
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
 
         {/* Mobile Tab Switcher */}
         <div className="flex md:hidden items-center justify-center mb-6 gap-1 rounded-2xl bg-zinc-900 border border-zinc-800 p-1 overflow-x-auto max-w-full scrollbar-none">
           <button
             onClick={() => setCurrentTab('leaderboard')}
             className={cn(
-              "flex-1 min-w-[90px] flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold transition-all shrink-0",
+              "flex-1 min-w-[80px] flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold transition-all shrink-0",
               currentTab === 'leaderboard' ? "bg-zinc-800 text-white shadow-sm border border-zinc-700/30" : "text-zinc-400 hover:text-zinc-200"
             )}
           >
@@ -755,7 +941,7 @@ function App() {
           <button
             onClick={() => setCurrentTab('analytics')}
             className={cn(
-              "flex-1 min-w-[90px] flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold transition-all shrink-0",
+              "flex-1 min-w-[80px] flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold transition-all shrink-0",
               currentTab === 'analytics' ? "bg-zinc-800 text-white shadow-sm border border-zinc-700/30" : "text-zinc-400 hover:text-zinc-200"
             )}
           >
@@ -763,8 +949,18 @@ function App() {
             Analytics
           </button>
           <button
+            onClick={() => setCurrentTab('chat')}
+            className={cn(
+              "flex-1 min-w-[80px] flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold transition-all shrink-0",
+              currentTab === 'chat' ? "bg-blue-600 text-white shadow-sm border border-blue-500/30" : "text-zinc-400 hover:text-zinc-200"
+            )}
+          >
+            <MessageSquare size={14} />
+            Chat
+          </button>
+          <button
             onClick={() => setIsUpdateLogsOpen(true)}
-            className="flex-1 min-w-[90px] flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold text-zinc-400 hover:text-white transition-all shrink-0"
+            className="flex-1 min-w-[80px] flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold text-zinc-400 hover:text-white transition-all shrink-0"
           >
             <Sparkles size={14} className="text-blue-400" />
             Updates
@@ -871,7 +1067,7 @@ function App() {
                 </div>
               )}
             </motion.div>
-          ) : (
+          ) : currentTab === 'analytics' ? (
             <motion.div
               key="analytics-tab"
               initial={{ opacity: 0, y: 15 }}
@@ -885,11 +1081,25 @@ function App() {
                 userVotes={userVotes}
               />
             </motion.div>
+          ) : (
+            <motion.div
+              key="chat-tab"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.25 }}
+            >
+              <PublicChat
+                user={user}
+                profileData={userProfileData}
+                isAdmin={isAdmin}
+              />
+            </motion.div>
           )}
         </AnimatePresence>
       </main>
 
-      <footer className="border-t border-zinc-900 bg-black py-12">
+      <footer className="border-t border-zinc-900 bg-black/80 py-12">
         <div className="mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
           <div className="flex items-center justify-center gap-2 opacity-50 grayscale mb-6">
             <Gamepad2 size={24} />
@@ -915,7 +1125,24 @@ function App() {
         games={games}
         userVotes={userVotes}
         userStreak={userStreak}
+        profileData={userProfileData}
         onVote={handleVote}
+        onOpenShop={() => setIsShopOpen(true)}
+      />
+
+      <ShopModal
+        isOpen={isShopOpen}
+        onClose={() => {
+          setIsShopOpen(false);
+          setPreviewThemeId(null);
+        }}
+        user={user}
+        profileData={userProfileData}
+        onBuyItem={handleBuyItem}
+        onEquipItem={handleEquipItem}
+        onClaimDailyBonus={handleClaimDailyBonus}
+        previewThemeId={previewThemeId}
+        onPreviewTheme={setPreviewThemeId}
       />
 
       <AdminDashboard
