@@ -7,7 +7,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
 
   return {
-    base: "/BloxVote/", // <-- Add this line
+    base: process.env.VITE_BASE || "/",
 
     plugins: [react(), tailwindcss()],
 

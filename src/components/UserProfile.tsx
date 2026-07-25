@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Trophy, ThumbsUp, ExternalLink, Calendar, Mail, Flame, Award, Trash2 } from 'lucide-react';
-import { Game } from '../types';
+import { X, Trophy, ThumbsUp, ExternalLink, Calendar, Mail, Flame, Award, Trash2, Zap, Sparkles } from 'lucide-react';
+import { Game, UserStreakData } from '../types';
 import { User } from 'firebase/auth';
 
 interface UserProfileProps {
@@ -10,6 +10,7 @@ interface UserProfileProps {
   user: User | null;
   games: Game[];
   userVotes: Record<string, boolean>;
+  userStreak?: UserStreakData | null;
   onVote: (gameId: string) => Promise<void>;
 }
 
@@ -19,6 +20,7 @@ export default function UserProfile({
   user, 
   games, 
   userVotes, 
+  userStreak,
   onVote 
 }: UserProfileProps) {
 
@@ -29,6 +31,19 @@ export default function UserProfile({
 
   // Calculate some fun profile stats
   const voteCount = votedGames.length;
+  
+  const streakCount = userStreak?.streakCount || 0;
+  const highestStreak = userStreak?.highestStreak || 0;
+
+  const streakBadge = useMemo(() => {
+    if (streakCount === 0) return { title: 'No Active Streak', badge: '❄️', color: 'text-zinc-500 bg-zinc-800/40 border-zinc-700/40' };
+    if (streakCount < 3) return { title: 'Ignited', badge: '🔥', color: 'text-orange-400 bg-orange-500/10 border-orange-500/30' };
+    if (streakCount < 7) return { title: 'On Fire!', badge: '⚡', color: 'text-amber-400 bg-amber-500/10 border-amber-500/40' };
+    if (streakCount < 14) return { title: 'Week Warrior', badge: '🛡️', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/40' };
+    if (streakCount < 30) return { title: 'Streak Legend', badge: '👑', color: 'text-purple-400 bg-purple-500/10 border-purple-500/40' };
+    return { title: 'Blox God', badge: '🌟', color: 'text-yellow-300 bg-yellow-500/20 border-yellow-400/50' };
+  }, [streakCount]);
+
   
   const creatorLoyalty = useMemo(() => {
     if (votedGames.length === 0) return 'None';
@@ -85,23 +100,23 @@ export default function UserProfile({
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl md:p-8"
+          className="relative w-full max-w-2xl max-h-[88vh] flex flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 shadow-2xl"
         >
           {/* Top colored accent line */}
-          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-500 via-purple-500 to-emerald-500" />
+          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-500 via-purple-500 to-emerald-500 z-10" />
 
           {/* Close button */}
           <button
             onClick={onClose}
-            className="absolute top-6 right-6 rounded-full border border-zinc-800 bg-zinc-900/80 p-2 text-zinc-400 transition-all hover:bg-zinc-800 hover:text-white"
+            className="absolute top-5 right-5 z-20 rounded-full border border-zinc-800 bg-zinc-900/90 p-2.5 text-zinc-400 transition-all hover:bg-zinc-800 hover:text-white shadow-lg"
           >
             <X size={18} />
           </button>
 
           {user ? (
-            <div className="flex flex-col h-full max-h-[80vh]">
+            <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6">
               {/* User Header Details */}
-              <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-6 border-b border-zinc-900 pb-6">
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-6 border-b border-zinc-900 pb-6 pr-8">
                 <div className="relative shrink-0">
                   <img
                     src={user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.uid}`}
@@ -136,9 +151,57 @@ export default function UserProfile({
                 </div>
               </div>
 
+              {/* 🔥 VOTING STREAK PROMINENT BADGE & CARD */}
+              <div className="relative rounded-3xl border border-orange-500/30 bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-zinc-900/70 p-5 sm:p-6 shadow-xl overflow-visible">
+                {/* Background Ambient Flame Icon */}
+                <div className="absolute right-2 bottom-0 text-orange-500/10 pointer-events-none overflow-hidden rounded-3xl inset-0 flex justify-end items-end p-2">
+                  <Flame size={110} />
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+                  <div className="flex items-center gap-4">
+                    <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-orange-600 to-amber-500 text-white shadow-lg shadow-orange-900/40 shrink-0">
+                      <Flame size={30} className="animate-pulse" />
+                      {streakCount > 0 && (
+                        <div className="absolute top-0 right-0 translate-x-1/3 -translate-y-1/3 flex h-6 w-6 items-center justify-center rounded-full bg-amber-400 text-black text-[11px] font-black border-2 border-zinc-950 shadow-md">
+                          {streakCount}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold uppercase tracking-wider text-orange-400">Voting Streak</span>
+                        <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${streakBadge.color}`}>
+                          <span>{streakBadge.badge}</span>
+                          <span>{streakBadge.title}</span>
+                        </span>
+                      </div>
+                      <h3 className="text-2xl font-black text-white mt-0.5 flex items-center gap-2">
+                        {streakCount} {streakCount === 1 ? 'Day' : 'Consecutive Days'}
+                      </h3>
+                      <p className="text-xs text-zinc-400 mt-1 max-w-sm leading-relaxed">
+                        {streakCount > 0 
+                          ? `Vote every day to keep your flame burning! Highest streak: ${highestStreak} days.`
+                          : 'Vote on any game today to start your consecutive day voting streak!'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Streak Progress Pill */}
+                  <div className="flex items-center gap-2 rounded-2xl bg-zinc-950/90 border border-zinc-800 px-4 py-3 shrink-0 self-start sm:self-auto shadow-md">
+                    <Zap size={18} className="text-amber-400 fill-amber-400" />
+                    <div>
+                      <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Best Record</p>
+                      <p className="text-sm font-black text-amber-300 font-mono">{highestStreak} Days</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Statistics Panel */}
-              <div className="grid grid-cols-2 gap-4 my-6">
-                <div className="rounded-2xl border border-zinc-900 bg-zinc-900/20 p-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-2xl border border-zinc-900 bg-zinc-900/30 p-4">
                   <div className="flex items-center gap-2 text-zinc-500">
                     <ThumbsUp size={14} className="text-emerald-500" />
                     <span className="text-xs font-bold uppercase tracking-wider">Total Cast Votes</span>
@@ -146,7 +209,7 @@ export default function UserProfile({
                   <p className="text-3xl font-black text-white mt-1.5">{voteCount}</p>
                 </div>
 
-                <div className="rounded-2xl border border-zinc-900 bg-zinc-900/20 p-4">
+                <div className="rounded-2xl border border-zinc-900 bg-zinc-900/30 p-4">
                   <div className="flex items-center gap-2 text-zinc-500">
                     <Flame size={14} className="text-orange-500" />
                     <span className="text-xs font-bold uppercase tracking-wider">Favorite Creator</span>
@@ -155,25 +218,26 @@ export default function UserProfile({
                 </div>
               </div>
 
-              {/* Voted Games Title */}
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-black text-zinc-400 uppercase tracking-wider flex items-center gap-2">
-                  <Trophy size={14} className="text-yellow-500" />
-                  Your Vote History
-                </h3>
-                <span className="text-xs font-mono text-zinc-500">
-                  {voteCount} active vote{voteCount !== 1 && 's'}
-                </span>
-              </div>
+              {/* Voted Games Section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-black text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+                    <Trophy size={14} className="text-yellow-500" />
+                    Your Vote History
+                  </h3>
+                  <span className="text-xs font-mono text-zinc-500">
+                    {voteCount} active vote{voteCount !== 1 && 's'}
+                  </span>
+                </div>
 
-              {/* Voted Games List (Scrollable) */}
-              <div className="flex-1 overflow-y-auto pr-1 space-y-3 max-h-[35vh]">
-                {votedGames.length > 0 ? (
-                  votedGames.map((game) => (
-                    <div
-                      key={game.id}
-                      className="group flex items-center gap-4 rounded-2xl border border-zinc-900 bg-zinc-900/10 p-3 hover:border-zinc-800 hover:bg-zinc-900/30 transition-all"
-                    >
+                {/* Voted Games List */}
+                <div className="space-y-2.5">
+                  {votedGames.length > 0 ? (
+                    votedGames.map((game) => (
+                      <div
+                        key={game.id}
+                        className="group flex items-center gap-4 rounded-2xl border border-zinc-900 bg-zinc-900/20 p-3 hover:border-zinc-800 hover:bg-zinc-900/40 transition-all"
+                      >
                       {/* Game cover thumbnail */}
                       <img
                         src={game.imageUrl}
@@ -232,6 +296,7 @@ export default function UserProfile({
                 )}
               </div>
             </div>
+          </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <div className="h-14 w-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-600 mb-4">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Component, ErrorInfo, ReactNode, useRef } from 'react';
+import React, { useState, useEffect, Component, ErrorInfo, ReactNode, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   collection,
@@ -18,14 +18,18 @@ import {
   where
 } from "firebase/firestore";
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { Trophy, Plus, LogIn, LogOut, Gamepad2, Search, TrendingUp, AlertTriangle, BarChart3, CircleUser, Download } from 'lucide-react';
+import { Trophy, Plus, LogIn, LogOut, Gamepad2, Search, TrendingUp, AlertTriangle, BarChart3, CircleUser, Download, Shield, Star, Flame } from 'lucide-react';
 import { db, auth, signIn, logout } from './firebase';
-import { Game } from './types';
+import { Game, UserStreakData } from './types';
 import GameCard from './components/GameCard';
 import AddGameModal from './components/AddGameModal';
 import TopGamesChart from './components/TopGamesChart';
 import UserProfile from './components/UserProfile';
+import AdminDashboard from './components/AdminDashboard';
+import FeaturedGamesBanner from './components/FeaturedGamesBanner';
 import { useToast } from './components/Toast';
+import { logActivity } from './lib/activity';
+import { recordUserVotingStreak } from './lib/streak';
 import { cn } from './lib/utils';
 
 // Error Handling
@@ -80,8 +84,8 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 }
 
-const ErrorBoundary = class extends (React.Component as any) {
-  constructor(props: any) {
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: any }> {
+  constructor(props: { children: ReactNode }) {
     super(props);
     this.state = { hasError: false, error: null };
   }
@@ -137,19 +141,59 @@ function App() {
   const [currentTab, setCurrentTab] = useState<'leaderboard' | 'analytics'>('leaderboard');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
+  const [userStreak, setUserStreak] = useState<UserStreakData | null>(null);
 
-  // Sync isProfileOpen with the URL query parameter ?profile=true
+  const featuredGames = useMemo(() => games.filter(g => g.isFeatured), [games]);
 
-  // Check if current user is an admin
+  // Realtime listener for user profile streak data
+  useEffect(() => {
+    if (!user) {
+      setUserStreak(null);
+      return;
+    }
+
+    const userRef = doc(db, 'users', user.uid);
+    const unsubscribe = onSnapshot(userRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setUserStreak({
+          streakCount: data.streakCount || 0,
+          highestStreak: data.highestStreak || 0,
+          lastVotedDate: data.lastVotedDate || '',
+          totalDaysVoted: data.totalDaysVoted || 0
+        });
+      } else {
+        setUserStreak(null);
+      }
+    }, (err) => {
+      console.warn("User streak listener error:", err);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Sync isProfileOpen and isAdminDashboardOpen with URL query parameters
   useEffect(() => {
     const checkAdmin = async () => {
-     if (!user) {
-       setIsAdmin(false);
-       return;
-     }
+      if (!user) {
+        setIsAdmin(false);
+        return;
+      }
 
-     const adminDoc = await getDoc(doc(db, "admins", user.uid));
-     setIsAdmin(adminDoc.exists());
+      // Owner/Super Admin email check
+      if (user.email && user.email.toLowerCase() === 'mondo7108@gmail.com') {
+        setIsAdmin(true);
+        return;
+      }
+
+      try {
+        const adminDoc = await getDoc(doc(db, "admins", user.uid));
+        setIsAdmin(adminDoc.exists());
+      } catch (err) {
+        console.warn("Admin check warning:", err);
+        setIsAdmin(false);
+      }
     };
 
     checkAdmin();
@@ -381,6 +425,8 @@ function App() {
           votes: increment(-1)
         });
         toast(`Retracted vote for ${gameName}`, 'info');
+
+        await logActivity('unvote', 'Vote Retracted', `Retracted vote for "${gameName}"`, { gameId, gameName });
       } else {
         // Vote
         currentPath = `users/${user.uid}/votes/${gameId}`;
@@ -392,7 +438,16 @@ function App() {
         await updateDoc(gameRef, {
           votes: increment(1)
         });
-        toast(`Successfully voted for ${gameName}! 🚀`, 'success');
+
+        // Record voting streak
+        const streakResult = await recordUserVotingStreak(user.uid);
+        if (streakResult.isNewStreakDay && streakResult.streakCount > 1) {
+          toast(`🔥 ${streakResult.streakCount} Day Voting Streak! Streak extended!`, 'success');
+        } else {
+          toast(`Successfully voted for ${gameName}! 🚀`, 'success');
+        }
+
+        await logActivity('vote', 'Voted for Experience', `Casted vote for "${gameName}"`, { gameId, gameName });
       }
     } catch (error: any) {
       handleFirestoreError(error, OperationType.WRITE, currentPath);
@@ -437,13 +492,15 @@ function App() {
     });
 
     try {
-      await addDoc(collection(db, 'games'), {
+      const docRef = await addDoc(collection(db, 'games'), {
         ...sanitizedGameData,
         votes: 0,
         createdAt: serverTimestamp(),
         createdBy: user.uid
       });
       toast(`Successfully submitted "${gameData.name}"! 🎉`, 'success');
+
+      await logActivity('add_game', 'New Game Added', `Submitted "${gameData.name}" to BloxVote`, { gameId: docRef.id, gameName: gameData.name });
     } catch (error: any) {
       handleFirestoreError(error, OperationType.CREATE, 'games');
       toast(`Failed to submit game: ${error.message || 'Permission denied'}`, 'error');
@@ -459,6 +516,8 @@ function App() {
     try {
       await deleteDoc(doc(db, 'games', gameId));
       toast(`Successfully deleted "${gameName}" from leaderboard`, 'success');
+
+      await logActivity('delete_game', 'Experience Removed', `Deleted "${gameName}" from leaderboard`, { gameId, gameName });
     } catch (error: any) {
       console.error('Error deleting game:', error);
       toast(`Failed to delete: ${error.message || 'Permission denied'}`, 'error');
@@ -496,21 +555,21 @@ function App() {
   };
 
   const filteredGames = games.filter(game => 
-    game.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    game.creator.toLowerCase().includes(searchQuery.toLowerCase())
+    (game.name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
+    (game.creator || '').toLowerCase().includes((searchQuery || '').toLowerCase())
   );
 
   return (
     <div className="min-h-screen bg-black text-zinc-100 selection:bg-blue-500/30 font-sans">
       {/* Navigation */}
-      <nav className="sticky top-0 z-40 border-b border-zinc-800 bg-black/80 backdrop-blur-md">
+      <nav className="sticky top-0 z-40 border-b border-zinc-800 bg-black/90 backdrop-blur-md">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
+          <div className="flex min-h-[4rem] py-2.5 items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 shadow-lg shadow-blue-900/20">
-                <Gamepad2 className="text-white" size={24} />
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 shadow-lg shadow-blue-900/20 shrink-0">
+                <Gamepad2 className="text-white" size={20} />
               </div>
-              <span className="text-2xl font-black tracking-tighter text-white">BLOXVOTE</span>
+              <span className="text-xl sm:text-2xl font-black tracking-tighter text-white">BLOXVOTE</span>
             </div>
 
             {/* Navigation Tabs */}
@@ -518,7 +577,7 @@ function App() {
               <button
                 onClick={() => setCurrentTab('leaderboard')}
                 className={cn(
-                  "flex items-center gap-2 rounded-full px-5 py-2 text-sm font-bold transition-all",
+                  "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs sm:text-sm font-bold transition-all",
                   currentTab === 'leaderboard' ? "bg-zinc-800 text-white shadow-md border border-zinc-700/30" : "text-zinc-400 hover:text-zinc-200"
                 )}
               >
@@ -528,7 +587,7 @@ function App() {
               <button
                 onClick={() => setCurrentTab('analytics')}
                 className={cn(
-                  "flex items-center gap-2 rounded-full px-5 py-2 text-sm font-bold transition-all",
+                  "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs sm:text-sm font-bold transition-all",
                   currentTab === 'analytics' ? "bg-zinc-800 text-white shadow-md border border-zinc-700/30" : "text-zinc-400 hover:text-zinc-200"
                 )}
               >
@@ -537,45 +596,64 @@ function App() {
               </button>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
               {user ? (
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
                   <div 
                     onClick={openProfile}
-                    className="hidden items-center gap-3 sm:flex cursor-pointer group transition-opacity duration-150"
+                    className="hidden xl:flex items-center gap-2 cursor-pointer group transition-opacity duration-150"
                     title="View Profile & Vote History"
                   >
                     <div className="text-right">
-                      <p className="text-xs font-medium text-zinc-500 uppercase tracking-widest">Logged in as</p>
-                      <p className="text-sm font-bold text-white group-hover:text-blue-400 transition-colors">{user.displayName}</p>
+                      <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-widest">Logged in as</p>
+                      <p className="text-xs font-bold text-white group-hover:text-blue-400 transition-colors">{user.displayName}</p>
                     </div>
                     <img 
                       src={user.photoURL || ''} 
                       alt={user.displayName || ''} 
-                      className="h-10 w-10 rounded-full border-2 border-zinc-800 group-hover:border-blue-500/50 transition-colors"
+                      className="h-8 w-8 rounded-full border-2 border-zinc-800 group-hover:border-blue-500/50 transition-colors object-cover"
                     />
                   </div>
+                  {isAdmin && (
+                    <button
+                      onClick={() => setIsAdminDashboardOpen(true)}
+                      className="flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-300 transition-all hover:bg-amber-500/20 active:scale-95 shadow-md shadow-amber-900/10"
+                    >
+                      <Shield size={14} className="text-amber-400" />
+                      <span>Admin Suite</span>
+                    </button>
+                  )}
+                  {userStreak && userStreak.streakCount > 0 && (
+                    <button
+                      onClick={openProfile}
+                      className="flex items-center gap-1.5 rounded-full border border-orange-500/40 bg-gradient-to-r from-orange-500/20 to-amber-500/20 px-3 py-1.5 text-xs font-black text-orange-400 transition-all hover:bg-orange-500/30 active:scale-95 shadow-md shadow-orange-950/30"
+                      title="Your Voting Streak"
+                    >
+                      <Flame size={14} className="text-orange-400 fill-orange-400 animate-pulse" />
+                      <span>{userStreak.streakCount} {userStreak.streakCount === 1 ? 'Day' : 'Days'} Streak</span>
+                    </button>
+                  )}
                   <button
                     onClick={openProfile}
-                    className="flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/40 px-4 py-2 text-sm font-bold text-blue-400 transition-all hover:bg-zinc-800 hover:text-blue-300 active:scale-95"
+                    className="flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/40 px-3 py-1.5 text-xs sm:text-sm font-bold text-blue-400 transition-all hover:bg-zinc-800 hover:text-blue-300 active:scale-95"
                   >
-                    <CircleUser size={16} />
+                    <CircleUser size={15} />
                     <span>My Profile</span>
                   </button>
                   <button
                     onClick={logout}
-                    className="flex items-center gap-2 rounded-full border border-zinc-800 px-4 py-2 text-sm font-bold text-zinc-400 transition-all hover:bg-zinc-800 hover:text-white active:scale-95"
+                    className="flex items-center gap-1.5 rounded-full border border-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-400 transition-all hover:bg-zinc-800 hover:text-white active:scale-95"
                   >
-                    <LogOut size={16} />
+                    <LogOut size={14} />
                     <span className="hidden sm:inline">Logout</span>
                   </button>
                 </div>
               ) : (
                 <button
                   onClick={signIn}
-                  className="flex items-center gap-2 rounded-full bg-white px-6 py-2.5 text-sm font-bold text-black transition-all hover:bg-zinc-200 active:scale-95"
+                  className="flex items-center gap-2 rounded-full bg-white px-5 py-2 text-xs sm:text-sm font-bold text-black transition-all hover:bg-zinc-200 active:scale-95"
                 >
-                  <LogIn size={18} />
+                  <LogIn size={16} />
                   Sign In with Google
                 </button>
               )}
@@ -584,32 +662,32 @@ function App() {
         </div>
       </nav>
 
-      <main className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {/* Hero Section */}
-        <div className="relative mb-16 overflow-hidden rounded-[2.5rem] bg-zinc-900 px-8 py-16 text-center sm:px-16">
+        <div className="relative mb-10 overflow-hidden rounded-[2rem] sm:rounded-[2.5rem] bg-zinc-900 px-6 py-10 text-center sm:px-12 sm:py-12">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(37,99,235,0.15),transparent_50%)]" />
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="relative z-10"
           >
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-blue-600/10 px-4 py-1.5 text-sm font-bold text-blue-400 border border-blue-500/20">
-              <TrendingUp size={16} />
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-blue-600/10 px-4 py-1 text-xs sm:text-sm font-bold text-blue-400 border border-blue-500/20">
+              <TrendingUp size={15} />
               Trending in the Metaverse
             </div>
-            <h1 className="mb-6 text-5xl font-black tracking-tight text-white sm:text-7xl">
+            <h1 className="mb-4 text-3xl font-black tracking-tight text-white sm:text-5xl md:text-6xl">
               Vote for your <span className="text-blue-500 italic">favorite</span> <br className="hidden sm:block" /> Roblox experience.
             </h1>
-            <p className="mx-auto mb-10 max-w-2xl text-lg text-zinc-400">
+            <p className="mx-auto mb-6 max-w-2xl text-sm sm:text-base text-zinc-400">
               Discover the most popular games on Roblox, voted by the community. 
               Add your favorites and help them climb the leaderboard.
             </p>
             <div className="flex flex-wrap justify-center gap-4">
               <button
                 onClick={() => user ? setIsAddModalOpen(true) : signIn()}
-                className="flex items-center gap-2 rounded-full bg-blue-600 px-8 py-4 text-lg font-bold text-white shadow-xl shadow-blue-900/20 transition-all hover:bg-blue-500 hover:scale-105 active:scale-95"
+                className="flex items-center gap-2 rounded-full bg-blue-600 px-6 py-3 text-sm sm:text-base font-bold text-white shadow-xl shadow-blue-900/20 transition-all hover:bg-blue-500 hover:scale-105 active:scale-95"
               >
-                <Plus size={24} />
+                <Plus size={20} />
                 Add Your Favorite Game
               </button>
             </div>
@@ -649,6 +727,13 @@ function App() {
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.25 }}
             >
+              {/* Featured Games Showcase */}
+              <FeaturedGamesBanner
+                featuredGames={featuredGames}
+                onVote={handleVote}
+                userVotes={userVotes}
+              />
+
               {/* Controls */}
               <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
                 <div className="relative flex-1 max-w-md">
@@ -774,6 +859,14 @@ function App() {
         user={user}
         games={games}
         userVotes={userVotes}
+        userStreak={userStreak}
+        onVote={handleVote}
+      />
+
+      <AdminDashboard
+        isOpen={isAdminDashboardOpen}
+        onClose={() => setIsAdminDashboardOpen(false)}
+        games={games}
         onVote={handleVote}
       />
     </div>

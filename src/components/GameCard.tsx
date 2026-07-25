@@ -32,7 +32,7 @@ export default function GameCard({ game, onVote, hasVoted, onDelete, rank }: Gam
     }
 
     // Static mappings for seeded games or common creators
-    const creatorLower = game.creator.toLowerCase();
+    const creatorLower = (game.creator || '').toLowerCase();
     if (creatorLower.includes('dreamcraft')) {
       return 'https://www.roblox.com/groups/2914101/DreamCraft';
     }

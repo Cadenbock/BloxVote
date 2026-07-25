@@ -35,7 +35,8 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() &&
-        (request.auth.token.email.matches("(?i)^mondo7108@gmail\\.com$") ||
+        ((request.auth.token.email != null && request.auth.token.email.matches("(?i)^mondo7108@gmail\\.com$")) ||
+         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
     }
@@ -53,7 +54,8 @@ service cloud.firestore {
              isValidUrl(data.robloxUrl) &&
              data.votes is number && data.votes >= 0 &&
              data.createdAt is timestamp &&
-             (data.createdBy == request.auth.uid || data.createdBy == "system");
+             data.createdBy is string &&
+             (!('isFeatured' in data) || data.isFeatured == null || data.isFeatured is bool);
     }
 
     // Vote Validation
@@ -67,9 +69,20 @@ service cloud.firestore {
       allow read: if true;
     }
 
+    match /admins/{adminId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /activities/{activityId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
     match /games/{gameId} {
       allow read: if true;
-      allow create: if isAuthenticated() && isValidGame(request.resource.data);
+      allow create: if isAuthenticated() && isValidGame(request.resource.data) && (request.resource.data.createdBy == request.auth.uid || request.resource.data.createdBy == "system");
       allow update: if isAuthenticated() && (
         // Allow anyone to increment/decrement votes by 1
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes']) &&
