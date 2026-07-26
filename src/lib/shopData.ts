@@ -167,10 +167,127 @@ export const BACKGROUND_THEMES: BackgroundThemeItem[] = [
   },
 ];
 
+export interface FontItem {
+  id: string;
+  name: string;
+  price: number;
+  description: string;
+  badge?: string;
+  fontFamily: string;
+  sampleText: string;
+  category: string;
+}
+
+export const FONT_ITEMS: FontItem[] = [
+  {
+    id: 'default',
+    name: 'Inter Modern',
+    price: 0,
+    description: 'The standard clean, highly legible interface font.',
+    fontFamily: "'Inter', sans-serif",
+    sampleText: 'BloxVote 2026 • Top Rated Roblox Experiences',
+    category: 'Standard',
+  },
+  {
+    id: 'fredoka',
+    name: 'Fredoka Cartoon',
+    price: 75,
+    description: 'Friendly, rounded, playful font that feels right at home on Roblox!',
+    badge: 'Popular 🎈',
+    fontFamily: "'Fredoka', cursive, sans-serif",
+    sampleText: 'Adopt Me! • Brookhaven RP • Blox Fruits',
+    category: 'Playful',
+  },
+  {
+    id: 'press-start',
+    name: '8-Bit Arcade',
+    price: 150,
+    description: 'Classic retro pixel font from early video game cabinets.',
+    badge: 'Retro 🕹️',
+    fontFamily: "'Press Start 2P', monospace",
+    sampleText: 'HIGH SCORE: 99999 • PRESS START TO VOTE',
+    category: 'Gaming',
+  },
+  {
+    id: 'outfit',
+    name: 'Outfit Cyber',
+    price: 100,
+    description: 'Sleek, futuristic geometric font with sharp modern edges.',
+    badge: 'Sleek ⚡',
+    fontFamily: "'Outfit', sans-serif",
+    sampleText: 'Metaverse Leaderboard • Realtime Ranking',
+    category: 'Modern',
+  },
+  {
+    id: 'chakra-petch',
+    name: 'Chakra Mecha',
+    price: 200,
+    description: 'Angular sci-fi robotic typography for tech enthusiasts.',
+    badge: 'Sci-Fi 🤖',
+    fontFamily: "'Chakra Petch', sans-serif",
+    sampleText: 'SYSTEM STATUS: 100% ONLINE • VOTE NOW',
+    category: 'Sci-Fi',
+  },
+  {
+    id: 'bungee',
+    name: 'Bungee Heavy',
+    price: 250,
+    description: 'Bold impact arcade font that pops off the screen!',
+    badge: 'Bold 💥',
+    fontFamily: "'Bungee', cursive, sans-serif",
+    sampleText: 'VOTE FOR THE BEST ROBLOX GAMES!',
+    category: 'Display',
+  },
+  {
+    id: 'permanent-marker',
+    name: 'Graffiti Marker',
+    price: 180,
+    description: 'Expressive hand-drawn marker font for street style energy.',
+    badge: 'Artistic 🎨',
+    fontFamily: "'Permanent Marker', cursive",
+    sampleText: 'BloxVote Community Leaderboard #1',
+    category: 'Handdrawn',
+  },
+  {
+    id: 'cinzel',
+    name: 'Cinzel Royal',
+    price: 300,
+    description: 'Majestic classical serif font fit for gaming royalty and RPG champions.',
+    badge: 'Royal 👑',
+    fontFamily: "'Cinzel', serif",
+    sampleText: 'The Champions Guild • Sovereign Votes',
+    category: 'Classic',
+  },
+  {
+    id: 'creepster',
+    name: 'Creepster Horror',
+    price: 350,
+    description: 'Dripping spooky horror font perfect for Halloween & survival games!',
+    badge: 'Spooky 👻',
+    fontFamily: "'Creepster', cursive",
+    sampleText: 'SURVIVE THE NIGHT • SCARY ROBLOX GAMES',
+    category: 'Fun',
+  },
+  {
+    id: 'lexend',
+    name: 'Lexend Ultra',
+    price: 120,
+    description: 'Super clear, ergonomically tuned font designed for effortless reading.',
+    badge: 'Crisp 📖',
+    fontFamily: "'Lexend', sans-serif",
+    sampleText: 'Smooth Ergonomic Typography for BloxVote',
+    category: 'Clean',
+  },
+];
+
 export function getNameColorStyle(colorId?: string): NameColorItem {
   return NAME_COLORS.find(c => c.id === colorId) || NAME_COLORS[0];
 }
 
 export function getBackgroundThemeStyle(themeId?: string): BackgroundThemeItem {
   return BACKGROUND_THEMES.find(t => t.id === themeId) || BACKGROUND_THEMES[0];
+}
+
+export function getFontItemStyle(fontId?: string): FontItem {
+  return FONT_ITEMS.find(f => f.id === fontId) || FONT_ITEMS[0];
 }

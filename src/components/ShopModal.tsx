@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Coins, Check, Sparkles, Palette, Image as ImageIcon, Flame, Gift, ArrowRight, ShieldCheck } from 'lucide-react';
+import { X, Coins, Check, Sparkles, Palette, Image as ImageIcon, Type, Gift } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { 
   NAME_COLORS, 
   BACKGROUND_THEMES, 
+  FONT_ITEMS,
   NameColorItem, 
   BackgroundThemeItem, 
+  FontItem,
   getNameColorStyle, 
-  getBackgroundThemeStyle 
+  getBackgroundThemeStyle,
+  getFontItemStyle
 } from '../lib/shopData';
 import { UserProfileData } from '../types';
 
@@ -17,11 +20,13 @@ interface ShopModalProps {
   onClose: () => void;
   user: User | null;
   profileData: UserProfileData;
-  onBuyItem: (type: 'color' | 'theme', item: NameColorItem | BackgroundThemeItem) => Promise<boolean>;
-  onEquipItem: (type: 'color' | 'theme', itemId: string) => Promise<void>;
+  onBuyItem: (type: 'color' | 'theme' | 'font', item: NameColorItem | BackgroundThemeItem | FontItem) => Promise<boolean>;
+  onEquipItem: (type: 'color' | 'theme' | 'font', itemId: string) => Promise<void>;
   onClaimDailyBonus: () => Promise<void>;
   previewThemeId?: string | null;
   onPreviewTheme?: (themeId: string | null) => void;
+  previewFontId?: string | null;
+  onPreviewFont?: (fontId: string | null) => void;
 }
 
 export default function ShopModal({
@@ -34,8 +39,10 @@ export default function ShopModal({
   onClaimDailyBonus,
   previewThemeId,
   onPreviewTheme,
+  previewFontId,
+  onPreviewFont,
 }: ShopModalProps) {
-  const [activeTab, setActiveTab] = useState<'colors' | 'themes' | 'earn'>('colors');
+  const [activeTab, setActiveTab] = useState<'colors' | 'themes' | 'fonts' | 'earn'>('colors');
   const [loadingItemId, setLoadingItemId] = useState<string | null>(null);
   const [isClaimingBonus, setIsClaimingBonus] = useState(false);
 
@@ -46,8 +53,12 @@ export default function ShopModal({
 
   const equippedColorStyle = getNameColorStyle(profileData.equippedColor);
   const equippedThemeStyle = getBackgroundThemeStyle(profileData.equippedTheme);
+  const equippedFontStyle = getFontItemStyle(profileData.equippedFont);
 
-  const handleBuy = async (type: 'color' | 'theme', item: NameColorItem | BackgroundThemeItem) => {
+  const purchasedFonts = profileData.purchasedFonts || ['default'];
+  const equippedFont = profileData.equippedFont || 'default';
+
+  const handleBuy = async (type: 'color' | 'theme' | 'font', item: NameColorItem | BackgroundThemeItem | FontItem) => {
     setLoadingItemId(item.id);
     try {
       await onBuyItem(type, item);
@@ -56,7 +67,7 @@ export default function ShopModal({
     }
   };
 
-  const handleEquip = async (type: 'color' | 'theme', itemId: string) => {
+  const handleEquip = async (type: 'color' | 'theme' | 'font', itemId: string) => {
     setLoadingItemId(itemId);
     try {
       await onEquipItem(type, itemId);
@@ -159,13 +170,22 @@ export default function ShopModal({
                 {equippedThemeStyle.name}
               </span>
             </div>
+            <div className="flex items-center gap-2 text-zinc-400 font-medium">
+              <span>Font:</span>
+              <span 
+                style={{ fontFamily: equippedFontStyle.fontFamily }}
+                className="px-2.5 py-1 rounded-lg bg-zinc-950 border border-zinc-800 text-amber-300 font-semibold"
+              >
+                {equippedFontStyle.name}
+              </span>
+            </div>
           </div>
 
           {/* Tabs */}
-          <div className="flex border-b border-zinc-800 px-6 pt-2 bg-zinc-950/40 gap-2">
+          <div className="flex border-b border-zinc-800 px-6 pt-2 bg-zinc-950/40 gap-2 overflow-x-auto scrollbar-none">
             <button
               onClick={() => setActiveTab('colors')}
-              className={`flex items-center gap-2 py-3 px-4 font-bold text-sm border-b-2 transition-all ${
+              className={`flex items-center gap-2 py-3 px-4 font-bold text-sm border-b-2 transition-all shrink-0 ${
                 activeTab === 'colors'
                   ? 'border-amber-500 text-amber-400'
                   : 'border-transparent text-zinc-400 hover:text-zinc-200'
@@ -176,18 +196,29 @@ export default function ShopModal({
             </button>
             <button
               onClick={() => setActiveTab('themes')}
-              className={`flex items-center gap-2 py-3 px-4 font-bold text-sm border-b-2 transition-all ${
+              className={`flex items-center gap-2 py-3 px-4 font-bold text-sm border-b-2 transition-all shrink-0 ${
                 activeTab === 'themes'
                   ? 'border-amber-500 text-amber-400'
                   : 'border-transparent text-zinc-400 hover:text-zinc-200'
               }`}
             >
               <ImageIcon size={16} />
-              Background Themes ({BACKGROUND_THEMES.length})
+              Themes ({BACKGROUND_THEMES.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('fonts')}
+              className={`flex items-center gap-2 py-3 px-4 font-bold text-sm border-b-2 transition-all shrink-0 ${
+                activeTab === 'fonts'
+                  ? 'border-amber-500 text-amber-400'
+                  : 'border-transparent text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <Type size={16} />
+              App Fonts ({FONT_ITEMS.length})
             </button>
             <button
               onClick={() => setActiveTab('earn')}
-              className={`flex items-center gap-2 py-3 px-4 font-bold text-sm border-b-2 transition-all ${
+              className={`flex items-center gap-2 py-3 px-4 font-bold text-sm border-b-2 transition-all shrink-0 ${
                 activeTab === 'earn'
                   ? 'border-amber-500 text-amber-400'
                   : 'border-transparent text-zinc-400 hover:text-zinc-200'
@@ -400,6 +431,133 @@ export default function ShopModal({
                             }`}
                           >
                             {loadingItemId === item.id ? 'Buying...' : !user ? 'Sign in' : canAfford ? 'Buy Theme' : 'Need Coins'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* APP FONTS TAB */}
+            {activeTab === 'fonts' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
+                {FONT_ITEMS.map((item) => {
+                  const isOwned = purchasedFonts.includes(item.id);
+                  const isEquipped = equippedFont === item.id;
+                  const isPreviewing = previewFontId === item.id;
+                  const canAfford = profileData.coins >= item.price;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className={`relative overflow-hidden rounded-2xl border p-4 transition-all ${
+                        isEquipped
+                          ? 'border-emerald-500/80 bg-emerald-950/20 shadow-[0_0_20px_rgba(16,185,129,0.15)]'
+                          : isPreviewing
+                          ? 'border-amber-500/80 bg-amber-950/20 shadow-[0_0_20px_rgba(245,158,11,0.15)]'
+                          : isOwned
+                          ? 'border-zinc-700 bg-zinc-900/60 hover:border-zinc-600'
+                          : 'border-zinc-800 bg-zinc-900/30 hover:border-zinc-700'
+                      }`}
+                    >
+                      {item.badge && (
+                        <div className="absolute top-3 right-3 rounded-full bg-cyan-500/20 px-2.5 py-0.5 text-[10px] font-extrabold text-cyan-300 border border-cyan-500/30">
+                          {item.badge}
+                        </div>
+                      )}
+
+                      {/* Font Preview Sample Box */}
+                      <div className="mb-3 rounded-xl bg-zinc-950 p-3.5 border border-zinc-800 flex flex-col justify-between min-h-[90px] shadow-inner relative overflow-hidden">
+                        <div className="flex items-center justify-between text-[10px] text-zinc-500 font-mono mb-1">
+                          <span>{item.category} • Font Preview</span>
+                          {isEquipped ? (
+                            <span className="text-emerald-400 font-bold flex items-center gap-1">
+                              <Check size={10} /> Active
+                            </span>
+                          ) : isPreviewing ? (
+                            <span className="text-amber-400 font-bold animate-pulse">Previewing</span>
+                          ) : null}
+                        </div>
+
+                        {/* Text rendered in exact font */}
+                        <div 
+                          style={{ fontFamily: item.fontFamily }} 
+                          className="text-sm sm:text-base font-bold text-white tracking-wide leading-snug my-1 line-clamp-2"
+                        >
+                          {item.sampleText}
+                        </div>
+
+                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-900">
+                          <span 
+                            style={{ fontFamily: item.fontFamily }} 
+                            className="text-xs text-amber-300 font-medium"
+                          >
+                            {item.name}
+                          </span>
+                          {onPreviewFont && (
+                            <button
+                              type="button"
+                              onClick={() => onPreviewFont(isPreviewing ? null : item.id)}
+                              className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all ${
+                                isPreviewing
+                                  ? 'bg-amber-500 text-black border-amber-400 shadow-sm'
+                                  : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border-zinc-700'
+                              }`}
+                            >
+                              {isPreviewing ? 'Stop Preview' : '👁️ Live Preview'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mb-3">
+                        <h3 className="font-bold text-white text-base">{item.name}</h3>
+                        <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                          {item.description}
+                        </p>
+                      </div>
+
+                      {/* Price / Action Button */}
+                      <div className="flex items-center justify-between pt-2 border-t border-zinc-800/80 mt-auto">
+                        <div className="flex items-center gap-1.5">
+                          {item.price === 0 ? (
+                            <span className="text-xs font-bold text-emerald-400">FREE</span>
+                          ) : (
+                            <>
+                              <Coins size={15} className="text-amber-400" />
+                              <span className="text-sm font-black text-amber-300">
+                                {item.price} <span className="text-xs font-normal text-zinc-400">Coins</span>
+                              </span>
+                            </>
+                          )}
+                        </div>
+
+                        {isEquipped ? (
+                          <div className="flex items-center gap-1 text-xs font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/30">
+                            <Check size={14} />
+                            Equipped
+                          </div>
+                        ) : isOwned ? (
+                          <button
+                            onClick={() => handleEquip('font', item.id)}
+                            disabled={loadingItemId === item.id}
+                            className="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-1.5 text-xs font-bold text-white transition-all active:scale-95"
+                          >
+                            {loadingItemId === item.id ? 'Equipping...' : 'Equip Font'}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleBuy('font', item)}
+                            disabled={!canAfford || !user || loadingItemId === item.id}
+                            className={`rounded-xl px-4 py-1.5 text-xs font-bold transition-all active:scale-95 ${
+                              canAfford && user
+                                ? 'bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black shadow-md'
+                                : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                            }`}
+                          >
+                            {loadingItemId === item.id ? 'Buying...' : !user ? 'Sign in' : canAfford ? 'Buy Font' : 'Need Coins'}
                           </button>
                         )}
                       </div>

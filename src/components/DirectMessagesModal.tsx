@@ -21,19 +21,12 @@ import {
   MessageSquare,
   X,
   Search,
-  Sparkles,
-  Shield,
-  Languages,
+  Lock,
   Send,
   Check,
   CheckCheck,
-  Globe,
-  Lock,
-  UserCheck,
-  AlertOctagon,
   Trash2,
   RefreshCw,
-  Zap,
   ArrowLeft
 } from 'lucide-react';
 import { db } from '../firebase';
@@ -50,19 +43,6 @@ interface DirectMessagesModalProps {
   userProfileData?: UserProfileData;
   initialTargetUser?: { uid: string; displayName: string; photoURL?: string; color?: string } | null;
 }
-
-const SUPPORTED_LANGUAGES = [
-  { code: 'English', label: 'English', flag: '🇺🇸' },
-  { code: 'Spanish', label: 'Español', flag: '🇪🇸' },
-  { code: 'French', label: 'Français', flag: '🇫🇷' },
-  { code: 'German', label: 'Deutsch', flag: '🇩🇪' },
-  { code: 'Japanese', label: '日本語', flag: '🇯🇵' },
-  { code: 'Portuguese', label: 'Português', flag: '🇧🇷' },
-  { code: 'Chinese', label: '中文', flag: '🇨🇳' },
-  { code: 'Korean', label: '한국어', flag: '🇰🇷' },
-  { code: 'Arabic', label: 'العربية', flag: '🇸🇦' },
-  { code: 'Russian', label: 'Русский', flag: '🇷🇺' },
-];
 
 export default function DirectMessagesModal({
   isOpen,
@@ -93,11 +73,6 @@ export default function DirectMessagesModal({
     return () => unsubscribe();
   }, []);
   const [isSearching, setIsSearching] = useState(false);
-  const [targetLanguage, setTargetLanguage] = useState<string>('English');
-  const [autoTranslateEnabled, setAutoTranslateEnabled] = useState<boolean>(true);
-  const [translatingMessageIds, setTranslatingMessageIds] = useState<Record<string, boolean>>({});
-  const [showOriginalMap, setShowOriginalMap] = useState<Record<string, boolean>>({});
-  const [localTranslations, setLocalTranslations] = useState<Record<string, Record<string, { translatedText: string; sourceLanguage: string }>>>({});
   const [isSending, setIsSending] = useState(false);
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
 
@@ -295,82 +270,6 @@ export default function DirectMessagesModal({
     return () => clearTimeout(searchTimer);
   }, [searchQuery, currentUser]);
 
-  // Auto-translate incoming messages using Gemini API
-  useEffect(() => {
-    if (!autoTranslateEnabled || messages.length === 0 || !targetLanguage) return;
-
-    messages.forEach((msg) => {
-      // Only auto-translate messages sent by the other user that aren't already translated to targetLanguage
-      if (msg.senderUid === currentUser?.uid) return;
-
-      const hasRemoteTranslation = msg.translations && msg.translations[targetLanguage];
-      const hasLocalTranslation = localTranslations[msg.id] && localTranslations[msg.id][targetLanguage];
-
-      if (!hasRemoteTranslation && !hasLocalTranslation && !translatingMessageIds[msg.id]) {
-        translateMessageWithGemini(msg, targetLanguage);
-      }
-    });
-  }, [messages, targetLanguage, autoTranslateEnabled, currentUser]);
-
-  // Core Gemini Translate function
-  const translateMessageWithGemini = async (msg: DirectMessage, lang: string) => {
-    setTranslatingMessageIds((prev) => ({ ...prev, [msg.id]: true }));
-
-    try {
-      const res = await fetch('/api/translate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: msg.filteredText || msg.originalText,
-          targetLanguage: lang
-        })
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.translatedText) {
-          const transEntry = {
-            translatedText: data.translatedText,
-            sourceLanguage: data.sourceLanguage || 'Auto'
-          };
-
-          // Store in local state for immediate feedback
-          setLocalTranslations((prev) => ({
-            ...prev,
-            [msg.id]: {
-              ...(prev[msg.id] || {}),
-              [lang]: transEntry
-            }
-          }));
-
-          // Cache in Firestore if current user is active participant
-          if (activeConversationId) {
-            const msgDocRef = doc(db, 'conversations', activeConversationId, 'messages', msg.id);
-            updateDoc(msgDocRef, {
-              [`translations.${lang}`]: transEntry
-            }).catch(() => {});
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Auto-translation failed:', err);
-    } finally {
-      setTranslatingMessageIds((prev) => {
-        const copy = { ...prev };
-        delete copy[msg.id];
-        return copy;
-      });
-    }
-  };
-
-  // Toggle Original vs Translated view for a message
-  const toggleShowOriginal = (msgId: string) => {
-    setShowOriginalMap((prev) => ({
-      ...prev,
-      [msgId]: !prev[msgId]
-    }));
-  };
-
   // Send Direct Message handler
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -556,43 +455,22 @@ export default function DirectMessagesModal({
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-base font-black text-white tracking-wide">Direct Messages</h2>
-                  <span className="rounded-full bg-violet-500/20 border border-violet-500/40 px-2.5 py-0.5 text-[10px] font-black uppercase text-violet-300 tracking-wider flex items-center gap-1">
-                    <Sparkles size={11} className="text-violet-400" />
-                    Auto-Translated
+                  <span className="rounded-full bg-violet-500/20 border border-violet-500/40 px-2.5 py-0.5 text-[10px] font-black uppercase text-violet-300 tracking-wider">
+                    Private & Secure
                   </span>
                 </div>
-                <p className="text-xs text-zinc-400 flex items-center gap-1.5 mt-0.5">
-                  <Shield size={12} className="text-emerald-400" />
-                  Censor Filtered & Gemini AI Live Translation Active
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Community Guideline Filtered Direct Messages
                 </p>
               </div>
             </div>
 
-            {/* Language Selector & Controls */}
-            <div className="flex items-center gap-2">
-              <div className="hidden sm:flex items-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/90 p-1.5 px-3">
-                <Languages size={15} className="text-violet-400" />
-                <span className="text-xs font-bold text-zinc-300">Translate to:</span>
-                <select
-                  value={targetLanguage}
-                  onChange={(e) => setTargetLanguage(e.target.value)}
-                  className="bg-transparent text-xs font-black text-violet-300 focus:outline-none cursor-pointer"
-                >
-                  {SUPPORTED_LANGUAGES.map((lang) => (
-                    <option key={lang.code} value={lang.code} className="bg-zinc-900 text-white">
-                      {lang.flag} {lang.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <button
-                onClick={onClose}
-                className="flex h-9 w-9 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-all"
-              >
-                <X size={18} />
-              </button>
-            </div>
+            <button
+              onClick={onClose}
+              className="flex h-9 w-9 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-all"
+            >
+              <X size={18} />
+            </button>
           </div>
 
           {/* Body Container: Split Pane */}
@@ -618,24 +496,6 @@ export default function DirectMessagesModal({
                   {isSearching && (
                     <RefreshCw size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-violet-400 animate-spin" />
                   )}
-                </div>
-
-                {/* Mobile Language Selector */}
-                <div className="flex sm:hidden items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-1.5">
-                  <span className="text-xs font-bold text-zinc-400 flex items-center gap-1.5">
-                    <Globe size={13} className="text-violet-400" /> Target Lang:
-                  </span>
-                  <select
-                    value={targetLanguage}
-                    onChange={(e) => setTargetLanguage(e.target.value)}
-                    className="bg-transparent text-xs font-bold text-violet-300 focus:outline-none"
-                  >
-                    {SUPPORTED_LANGUAGES.map((lang) => (
-                      <option key={lang.code} value={lang.code} className="bg-zinc-900 text-white">
-                        {lang.flag} {lang.label}
-                      </option>
-                    ))}
-                  </select>
                 </div>
               </div>
 
@@ -778,23 +638,6 @@ export default function DirectMessagesModal({
                       </div>
                     </div>
 
-                    {/* Auto-Translate Mode Indicator */}
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setAutoTranslateEnabled(!autoTranslateEnabled)}
-                        className={cn(
-                          'flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-extrabold transition-all',
-                          autoTranslateEnabled
-                            ? 'bg-violet-600/20 border-violet-500/40 text-violet-300'
-                            : 'bg-zinc-900 border-zinc-800 text-zinc-500'
-                        )}
-                        title="Toggle Gemini Auto-Translation"
-                      >
-                        <Sparkles size={13} className={autoTranslateEnabled ? 'text-violet-400' : 'text-zinc-500'} />
-                        <span className="hidden sm:inline">Auto-Translate:</span>{' '}
-                        {autoTranslateEnabled ? 'ON' : 'OFF'}
-                      </button>
-                    </div>
                   </div>
 
                   {/* Message Thread Scroll View */}
@@ -806,24 +649,12 @@ export default function DirectMessagesModal({
                           Direct message started with {activePartner.displayName}
                         </p>
                         <p className="text-[11px] text-zinc-500 max-w-sm mt-1">
-                          Messages are filtered for community guidelines and auto-translated via Gemini AI into your chosen language!
+                          Messages are filtered for community guidelines to keep chats safe!
                         </p>
                       </div>
                     ) : (
                       messages.map((msg) => {
                         const isMe = msg.senderUid === currentUser?.uid;
-
-                        // Check remote vs local translation for active target language
-                        const remoteTrans = msg.translations && msg.translations[targetLanguage];
-                        const localTrans = localTranslations[msg.id] && localTranslations[msg.id][targetLanguage];
-                        const translation = remoteTrans || localTrans;
-                        const isTranslating = translatingMessageIds[msg.id];
-                        const showOriginal = showOriginalMap[msg.id];
-
-                        const displayText =
-                          showOriginal || !translation
-                            ? msg.filteredText
-                            : translation.translatedText;
 
                         return (
                           <div
@@ -853,53 +684,8 @@ export default function DirectMessagesModal({
                             >
                               {/* Display Message Content */}
                               <p className="text-xs leading-relaxed font-sans break-words whitespace-pre-wrap">
-                                {displayText}
+                                {msg.filteredText || msg.originalText}
                               </p>
-
-                              {/* Translation Banner / Badges */}
-                              {!isMe && translation && !showOriginal && (
-                                <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-[10px] text-violet-300 font-bold">
-                                  <span className="flex items-center gap-1">
-                                    <Sparkles size={11} className="text-violet-300 animate-pulse" />
-                                    Translated via Gemini ({translation.sourceLanguage} ➔ {targetLanguage})
-                                  </span>
-                                  <button
-                                    onClick={() => toggleShowOriginal(msg.id)}
-                                    className="hover:underline text-zinc-300"
-                                  >
-                                    Show Original
-                                  </button>
-                                </div>
-                              )}
-
-                              {!isMe && translation && showOriginal && (
-                                <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-[10px] text-zinc-400">
-                                  <span>Showing Original Text</span>
-                                  <button
-                                    onClick={() => toggleShowOriginal(msg.id)}
-                                    className="hover:underline text-violet-300 font-bold"
-                                  >
-                                    View Translation
-                                  </button>
-                                </div>
-                              )}
-
-                              {/* Manual Translate Button if not translated yet */}
-                              {!isMe && !translation && !isTranslating && (
-                                <button
-                                  onClick={() => translateMessageWithGemini(msg, targetLanguage)}
-                                  className="mt-1.5 flex items-center gap-1 text-[10px] text-violet-400 hover:text-violet-300 font-bold"
-                                >
-                                  <Globe size={11} /> Translate to {targetLanguage}
-                                </button>
-                              )}
-
-                              {isTranslating && (
-                                <div className="mt-1.5 flex items-center gap-1 text-[10px] text-violet-300 font-bold animate-pulse">
-                                  <RefreshCw size={11} className="animate-spin" />
-                                  Translating with Gemini AI...
-                                </div>
-                              )}
                             </div>
                           </div>
                         );

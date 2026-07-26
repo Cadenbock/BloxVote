@@ -61,6 +61,8 @@ export interface UserProfileData {
   purchasedColors: string[];
   equippedTheme: string;
   purchasedThemes: string[];
+  equippedFont?: string;
+  purchasedFonts?: string[];
   displayName?: string;
   photoURL?: string;
   lastDailyBonusDate?: string;

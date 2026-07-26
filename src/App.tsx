@@ -32,7 +32,7 @@ import UpdateLogsModal from './components/UpdateLogsModal';
 import ShopModal from './components/ShopModal';
 import PublicChat from './components/PublicChat';
 import DirectMessagesModal from './components/DirectMessagesModal';
-import { getNameColorStyle, getBackgroundThemeStyle, NameColorItem, BackgroundThemeItem } from './lib/shopData';
+import { getNameColorStyle, getBackgroundThemeStyle, getFontItemStyle, NameColorItem, BackgroundThemeItem, FontItem } from './lib/shopData';
 import { useToast } from './components/Toast';
 import { logActivity } from './lib/activity';
 import { recordUserVotingStreak } from './lib/streak';
@@ -170,12 +170,15 @@ function App() {
   const [isDMOpen, setIsDMOpen] = useState(false);
   const [dmTargetUser, setDmTargetUser] = useState<{ uid: string; displayName: string; photoURL?: string; color?: string } | null>(null);
   const [previewThemeId, setPreviewThemeId] = useState<string | null>(null);
+  const [previewFontId, setPreviewFontId] = useState<string | null>(null);
   const [userProfileData, setUserProfileData] = useState<UserProfileData>({
     coins: 50,
     equippedColor: 'default',
     purchasedColors: ['default'],
     equippedTheme: 'default',
     purchasedThemes: ['default'],
+    equippedFont: 'default',
+    purchasedFonts: ['default'],
   });
 
   const featuredGames = useMemo(() => games.filter(g => g.isFeatured), [games]);
@@ -189,6 +192,8 @@ function App() {
         purchasedColors: ['default'],
         equippedTheme: 'default',
         purchasedThemes: ['default'],
+        equippedFont: 'default',
+        purchasedFonts: ['default'],
       });
       return;
     }
@@ -213,6 +218,8 @@ function App() {
           purchasedColors: Array.isArray(data.purchasedColors) ? data.purchasedColors : ['default'],
           equippedTheme: data.equippedTheme || 'default',
           purchasedThemes: Array.isArray(data.purchasedThemes) ? data.purchasedThemes : ['default'],
+          equippedFont: data.equippedFont || 'default',
+          purchasedFonts: Array.isArray(data.purchasedFonts) ? data.purchasedFonts : ['default'],
           displayName: data.displayName || user.displayName || '',
           photoURL: data.photoURL || user.photoURL || '',
           lastDailyBonusDate: data.lastDailyBonusDate || '',
@@ -224,6 +231,8 @@ function App() {
           purchasedColors: ['default'],
           equippedTheme: 'default',
           purchasedThemes: ['default'],
+          equippedFont: 'default',
+          purchasedFonts: ['default'],
           displayName: user.displayName || '',
           photoURL: user.photoURL || '',
           email: user.email || ''
@@ -576,7 +585,7 @@ function App() {
   };
 
   // Shop Handlers
-  const handleBuyItem = async (type: 'color' | 'theme', item: NameColorItem | BackgroundThemeItem): Promise<boolean> => {
+  const handleBuyItem = async (type: 'color' | 'theme' | 'font', item: NameColorItem | BackgroundThemeItem | FontItem): Promise<boolean> => {
     if (!user) {
       signIn();
       return false;
@@ -597,7 +606,7 @@ function App() {
           equippedColor: item.id,
         }, { merge: true });
         toast(`Purchased & equipped ${item.name}! 🎨`, 'success');
-      } else {
+      } else if (type === 'theme') {
         const updatedThemes = Array.from(new Set([...userProfileData.purchasedThemes, item.id]));
         await setDoc(userRef, {
           coins: increment(-item.price),
@@ -605,6 +614,15 @@ function App() {
           equippedTheme: item.id,
         }, { merge: true });
         toast(`Purchased & equipped ${item.name} theme! 🌌`, 'success');
+      } else {
+        const currentFonts = userProfileData.purchasedFonts || ['default'];
+        const updatedFonts = Array.from(new Set([...currentFonts, item.id]));
+        await setDoc(userRef, {
+          coins: increment(-item.price),
+          purchasedFonts: updatedFonts,
+          equippedFont: item.id,
+        }, { merge: true });
+        toast(`Purchased & equipped ${item.name} font! 🔤`, 'success');
       }
       return true;
     } catch (err: any) {
@@ -614,7 +632,7 @@ function App() {
     }
   };
 
-  const handleEquipItem = async (type: 'color' | 'theme', itemId: string) => {
+  const handleEquipItem = async (type: 'color' | 'theme' | 'font', itemId: string) => {
     if (!user) return;
     try {
       const userRef = doc(db, 'users', user.uid);
@@ -622,10 +640,14 @@ function App() {
         await setDoc(userRef, { equippedColor: itemId }, { merge: true });
         const colorItem = getNameColorStyle(itemId);
         toast(`Equipped ${colorItem.name}! ✨`, 'success');
-      } else {
+      } else if (type === 'theme') {
         await setDoc(userRef, { equippedTheme: itemId }, { merge: true });
         const themeItem = getBackgroundThemeStyle(itemId);
         toast(`Equipped ${themeItem.name} background! 🌌`, 'success');
+      } else {
+        await setDoc(userRef, { equippedFont: itemId }, { merge: true });
+        const fontItem = getFontItemStyle(itemId);
+        toast(`Equipped ${fontItem.name} font! 🔤`, 'success');
       }
     } catch (err) {
       console.error('Failed to equip item:', err);
@@ -772,9 +794,12 @@ function App() {
   const activeThemeId = previewThemeId || userProfileData.equippedTheme;
   const backgroundThemeStyle = getBackgroundThemeStyle(activeThemeId);
 
+  const activeFontId = previewFontId || userProfileData.equippedFont;
+  const fontStyle = getFontItemStyle(activeFontId);
+
   return (
     <div
-      style={backgroundThemeStyle.style}
+      style={{ ...backgroundThemeStyle.style, fontFamily: fontStyle.fontFamily }}
       className={`min-h-screen font-sans transition-all duration-500 ${backgroundThemeStyle.backgroundClass}`}
     >
       {/* Navigation */}
@@ -1174,6 +1199,7 @@ function App() {
         onClose={() => {
           setIsShopOpen(false);
           setPreviewThemeId(null);
+          setPreviewFontId(null);
         }}
         user={user}
         profileData={userProfileData}
@@ -1182,6 +1208,8 @@ function App() {
         onClaimDailyBonus={handleClaimDailyBonus}
         previewThemeId={previewThemeId}
         onPreviewTheme={setPreviewThemeId}
+        previewFontId={previewFontId}
+        onPreviewFont={setPreviewFontId}
       />
 
       <AdminDashboard

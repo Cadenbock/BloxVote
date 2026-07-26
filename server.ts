@@ -1,7 +1,6 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI } from '@google/genai';
 
 async function startServer() {
   const app = express();
@@ -18,68 +17,6 @@ async function startServer() {
   });
 
   app.use(express.json());
-
-  // API Route: Translate DM message via Gemini AI
-  app.post('/api/translate', async (req, res) => {
-    try {
-      const { text, targetLanguage } = req.body;
-      if (!text || !targetLanguage) {
-        return res.status(400).json({ error: 'Missing text or targetLanguage parameters' });
-      }
-
-      if (!process.env.GEMINI_API_KEY) {
-        return res.json({
-          translatedText: text,
-          sourceLanguage: 'Auto',
-          success: true,
-          note: 'GEMINI_API_KEY environment variable not set'
-        });
-      }
-
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
-      });
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents: `Translate the following chat message into ${targetLanguage}. Keep the tone friendly, natural, and accurate for gaming chat. Detect the source language as well.
-Return ONLY valid JSON with keys:
-"translatedText" (string)
-"sourceLanguage" (string, e.g. "English", "Spanish", "Japanese", "French", "German", "Portuguese", etc.)
-
-Message to translate: "${text.replace(/"/g, '\\"')}"`,
-        config: {
-          responseMimeType: 'application/json',
-        }
-      });
-
-      const outputText = response.text || '';
-      let parsed = { translatedText: text, sourceLanguage: 'Auto' };
-      try {
-        parsed = JSON.parse(outputText);
-      } catch {
-        parsed.translatedText = outputText.trim() || text;
-      }
-
-      return res.json({
-        translatedText: parsed.translatedText || text,
-        sourceLanguage: parsed.sourceLanguage || 'Auto',
-        success: true
-      });
-    } catch (error: any) {
-      console.error('Translation error:', error);
-      return res.status(500).json({
-        error: error.message || 'Translation failed',
-        translatedText: req.body.text || '',
-        sourceLanguage: 'Auto'
-      });
-    }
-  });
 
   // API Route: Fetch Roblox game info from URL or place ID
   app.get('/api/roblox-info', async (req, res) => {

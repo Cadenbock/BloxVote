@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Trophy, ThumbsUp, ExternalLink, Calendar, Mail, Flame, Award, Trash2, Zap, Sparkles, Coins, ShoppingBag, Palette } from 'lucide-react';
 import { Game, UserStreakData, UserProfileData } from '../types';
-import { getNameColorStyle, getBackgroundThemeStyle } from '../lib/shopData';
+import { getNameColorStyle, getBackgroundThemeStyle, getFontItemStyle } from '../lib/shopData';
 import { User } from 'firebase/auth';
 
 interface UserProfileProps {
@@ -171,6 +171,16 @@ export default function UserProfile({
                   </div>
                 </div>
 
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-zinc-400 text-[11px]">Equipped Font:</span>
+                  <span 
+                    style={{ fontFamily: getFontItemStyle(profileData?.equippedFont).fontFamily }}
+                    className="px-2.5 py-1 rounded-lg bg-zinc-950 border border-zinc-800 text-amber-300 font-semibold"
+                  >
+                    {getFontItemStyle(profileData?.equippedFont).name}
+                  </span>
+                </div>
+
                 {onOpenShop && (
                   <button
                     onClick={() => {
@@ -180,7 +190,7 @@ export default function UserProfile({
                     className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 px-4 py-2 text-xs font-bold text-black hover:from-amber-400 hover:to-yellow-400 transition-all shadow-md active:scale-95 shrink-0"
                   >
                     <ShoppingBag size={15} />
-                    Open Cosmetic Shop
+                    Open Shop
                   </button>
                 )}
               </div>
