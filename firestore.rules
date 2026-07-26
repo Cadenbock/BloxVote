@@ -110,6 +110,10 @@ service cloud.firestore {
       match /votes/{gameId} {
         allow read, write: if isOwner(userId);
       }
+
+      match /notifications/{notificationId} {
+        allow read, write, create, update, delete: if isOwner(userId) || isAdmin();
+      }
     }
 
     match /publicChat/{messageId} {

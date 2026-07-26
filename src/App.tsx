@@ -18,9 +18,9 @@ import {
   where
 } from "firebase/firestore";
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { Trophy, Plus, LogIn, LogOut, Gamepad2, Search, TrendingUp, AlertTriangle, BarChart3, CircleUser, Download, Shield, Star, Flame, Sparkles, FileText, Coins, ShoppingBag, MessageSquare } from 'lucide-react';
+import { Trophy, Plus, LogIn, LogOut, Gamepad2, Search, TrendingUp, AlertTriangle, BarChart3, CircleUser, Download, Shield, Star, Flame, Sparkles, FileText, Coins, ShoppingBag, MessageSquare, Bell } from 'lucide-react';
 import { db, auth, signIn, logout } from './firebase';
-import { Game, UserStreakData, GlobalAnnouncement, UserProfileData } from './types';
+import { Game, UserStreakData, GlobalAnnouncement, UserProfileData, AppNotification } from './types';
 import GameCard from './components/GameCard';
 import AddGameModal from './components/AddGameModal';
 import TopGamesChart from './components/TopGamesChart';
@@ -32,6 +32,7 @@ import UpdateLogsModal from './components/UpdateLogsModal';
 import ShopModal from './components/ShopModal';
 import PublicChat from './components/PublicChat';
 import DirectMessagesModal from './components/DirectMessagesModal';
+import NotificationsModal from './components/NotificationsModal';
 import { getNameColorStyle, getBackgroundThemeStyle, getFontItemStyle, NameColorItem, BackgroundThemeItem, FontItem } from './lib/shopData';
 import { useToast } from './components/Toast';
 import { logActivity } from './lib/activity';
@@ -171,6 +172,8 @@ function App() {
   const [dmTargetUser, setDmTargetUser] = useState<{ uid: string; displayName: string; photoURL?: string; color?: string } | null>(null);
   const [previewThemeId, setPreviewThemeId] = useState<string | null>(null);
   const [previewFontId, setPreviewFontId] = useState<string | null>(null);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [userProfileData, setUserProfileData] = useState<UserProfileData>({
     coins: 50,
     equippedColor: 'default',
@@ -341,6 +344,238 @@ function App() {
     url.searchParams.delete('profile');
     window.history.pushState({}, '', url.toString());
     setIsProfileOpen(false);
+  };
+
+  // Realtime Notification Listener & Default Sync
+  useEffect(() => {
+    if (!user) {
+      setNotifications([
+        {
+          id: 'welcome-1',
+          type: 'system',
+          title: 'Welcome to BloxVote 2026! 🎮',
+          message: 'Discover, rate, and vote for top Roblox games. Earn BloxCoins for daily voting!',
+          timestamp: new Date(),
+          isRead: false,
+          linkAction: 'open_leaderboard',
+        },
+        {
+          id: 'bonus-1',
+          type: 'reward',
+          title: 'Daily Reward Ready 🎁',
+          message: 'Sign in to claim your 50 free BloxCoins daily bonus and customize your profile font & colors!',
+          timestamp: new Date(Date.now() - 3600000),
+          isRead: false,
+          linkAction: 'open_shop',
+        },
+        {
+          id: 'chat-1',
+          type: 'announcement',
+          title: 'Global Community Chat 💬',
+          message: 'Join live chat and send direct messages to other Roblox gamers!',
+          timestamp: new Date(Date.now() - 7200000),
+          isRead: true,
+          linkAction: 'open_chat',
+        },
+      ]);
+      return;
+    }
+
+    const notifRef = collection(db, 'users', user.uid, 'notifications');
+    const q = query(notifRef, orderBy('timestamp', 'desc'));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const remoteNotifs: AppNotification[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        remoteNotifs.push({
+          id: docSnap.id,
+          userId: user.uid,
+          type: data.type || 'system',
+          title: data.title || '',
+          message: data.message || '',
+          timestamp: data.timestamp || new Date(),
+          isRead: !!data.isRead,
+          linkAction: data.linkAction,
+          actionData: data.actionData,
+        });
+      });
+
+      if (remoteNotifs.length === 0) {
+        const initialNotifs: AppNotification[] = [
+          {
+            id: 'init-1',
+            type: 'system',
+            title: 'Welcome to BloxVote 2026! 🚀',
+            message: 'You are signed in as ' + (user.displayName || 'Gamer') + '. Vote daily to build your streak and earn coins.',
+            timestamp: new Date(),
+            isRead: false,
+            linkAction: 'open_leaderboard',
+          },
+          {
+            id: 'init-2',
+            type: 'reward',
+            title: 'Daily Bonus Available 🎁',
+            message: 'Claim 50 free BloxCoins today in the shop!',
+            timestamp: new Date(),
+            isRead: false,
+            linkAction: 'open_shop',
+          }
+        ];
+        setNotifications(initialNotifs);
+
+        initialNotifs.forEach(async (n) => {
+          try {
+            await setDoc(doc(db, 'users', user.uid, 'notifications', n.id), {
+              type: n.type,
+              title: n.title,
+              message: n.message,
+              timestamp: serverTimestamp(),
+              isRead: n.isRead,
+              linkAction: n.linkAction,
+            }, { merge: true });
+          } catch (e) {
+            console.warn("Error seeding notification:", e);
+          }
+        });
+      } else {
+        setNotifications(remoteNotifs);
+      }
+    }, (err) => {
+      console.warn("Notifications listener warning:", err);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Realtime Listener for Unread DMs => Create DM Notifications
+  useEffect(() => {
+    if (!user) return;
+
+    const convQ = query(
+      collection(db, 'conversations'),
+      where('participantUids', 'array-contains', user.uid)
+    );
+
+    const unsubscribe = onSnapshot(convQ, (snapshot) => {
+      snapshot.forEach(async (docSnap) => {
+        const conv = docSnap.data();
+        const unreadCount = conv.unreadCounts?.[user.uid] || 0;
+        if (unreadCount > 0) {
+          const senderUid = conv.lastMessageSenderUid;
+          if (senderUid && senderUid !== user.uid) {
+            const partner = conv.participants?.[senderUid];
+            const notifId = `dm-${docSnap.id}`;
+
+            const notifData = {
+              type: 'dm',
+              title: `New Direct Message from ${partner?.displayName || 'User'} 💬`,
+              message: conv.lastMessageText || 'You received a new direct message.',
+              timestamp: serverTimestamp(),
+              isRead: false,
+              linkAction: 'open_dm',
+              actionData: {
+                partnerUid: senderUid,
+                partnerName: partner?.displayName,
+                partnerPhoto: partner?.photoURL,
+                partnerColor: partner?.equippedColor,
+              }
+            };
+
+            try {
+              await setDoc(doc(db, 'users', user.uid, 'notifications', notifId), notifData, { merge: true });
+            } catch (err) {
+              console.warn("Error saving DM notification:", err);
+            }
+          }
+        }
+      });
+    }, (err) => {
+      console.warn("Conversations listener warning:", err);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Notification Handlers
+  const handleMarkNotificationAsRead = async (id: string) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+    if (user) {
+      try {
+        await updateDoc(doc(db, 'users', user.uid, 'notifications', id), { isRead: true });
+      } catch (err) {
+        console.warn("Failed to mark notification as read:", err);
+      }
+    }
+  };
+
+  const handleMarkAllNotificationsAsRead = async () => {
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    if (user) {
+      notifications.forEach(async (n) => {
+        if (!n.isRead) {
+          try {
+            await updateDoc(doc(db, 'users', user.uid, 'notifications', n.id), { isRead: true });
+          } catch (err) {
+            console.warn("Failed to mark notification as read:", err);
+          }
+        }
+      });
+    }
+    toast("All notifications marked as read! 🧹", "success");
+  };
+
+  const handleDeleteNotification = async (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+    if (user) {
+      try {
+        await deleteDoc(doc(db, 'users', user.uid, 'notifications', id));
+      } catch (err) {
+        console.warn("Failed to delete notification:", err);
+      }
+    }
+  };
+
+  const handleClearAllNotifications = async () => {
+    const toDelete = [...notifications];
+    setNotifications([]);
+    if (user) {
+      toDelete.forEach(async (n) => {
+        try {
+          await deleteDoc(doc(db, 'users', user.uid, 'notifications', n.id));
+        } catch (err) {
+          console.warn("Failed to clear notification:", err);
+        }
+      });
+    }
+    toast("Notification box cleared! ✨", "info");
+  };
+
+  const handleExecuteNotificationAction = (
+    action?: string,
+    data?: { partnerUid?: string; partnerName?: string; partnerPhoto?: string; partnerColor?: string; gameId?: string }
+  ) => {
+    if (action === 'open_dm') {
+      if (data?.partnerUid) {
+        setDmTargetUser({
+          uid: data.partnerUid,
+          displayName: data.partnerName || 'User',
+          photoURL: data.partnerPhoto,
+          color: data.partnerColor,
+        });
+      }
+      setIsDMOpen(true);
+    } else if (action === 'open_shop') {
+      setIsShopOpen(true);
+    } else if (action === 'open_updates') {
+      setIsUpdateLogsOpen(true);
+    } else if (action === 'open_chat') {
+      setCurrentTab('chat');
+    } else if (action === 'open_leaderboard') {
+      setCurrentTab('leaderboard');
+    } else if (action === 'open_profile') {
+      setIsProfileOpen(true);
+    }
   };
 
   // Test connection
@@ -797,6 +1032,8 @@ function App() {
   const activeFontId = previewFontId || userProfileData.equippedFont;
   const fontStyle = getFontItemStyle(activeFontId);
 
+  const unreadNotificationCount = notifications.filter(n => !n.isRead).length;
+
   return (
     <div
       style={{ ...backgroundThemeStyle.style, fontFamily: fontStyle.fontFamily }}
@@ -857,6 +1094,21 @@ function App() {
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+              {/* Notification Center Pill */}
+              <button
+                onClick={() => setIsNotificationsOpen(true)}
+                className="flex items-center gap-1.5 rounded-full border border-blue-500/40 bg-gradient-to-r from-blue-600/20 to-indigo-600/20 px-3.5 py-1.5 text-xs font-black text-blue-300 transition-all hover:bg-blue-600/30 active:scale-95 shadow-md shadow-blue-950/30 relative"
+                title="Open Notifications Hub"
+              >
+                <Bell size={14} className="text-blue-400" />
+                <span>Alerts</span>
+                {unreadNotificationCount > 0 && (
+                  <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-blue-600 text-[10px] font-black text-white px-1 shadow-sm animate-pulse">
+                    {unreadNotificationCount}
+                  </span>
+                )}
+              </button>
+
               {/* Coins & Shop Pill */}
               <button
                 onClick={() => setIsShopOpen(true)}
@@ -1237,6 +1489,17 @@ function App() {
         currentUser={user}
         userProfileData={userProfileData}
         initialTargetUser={dmTargetUser}
+      />
+
+      <NotificationsModal
+        isOpen={isNotificationsOpen}
+        onClose={() => setIsNotificationsOpen(false)}
+        notifications={notifications}
+        onMarkAsRead={handleMarkNotificationAsRead}
+        onMarkAllAsRead={handleMarkAllNotificationsAsRead}
+        onDeleteNotification={handleDeleteNotification}
+        onClearAll={handleClearAllNotifications}
+        onExecuteAction={handleExecuteNotificationAction}
       />
     </div>
   );

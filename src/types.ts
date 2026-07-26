@@ -150,3 +150,23 @@ export interface Conversation {
   updatedAt: any;
 }
 
+export type NotificationType = 'dm' | 'reward' | 'streak' | 'announcement' | 'game' | 'system' | 'mention';
+
+export interface AppNotification {
+  id: string;
+  userId?: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  timestamp: any;
+  isRead: boolean;
+  linkAction?: 'open_dm' | 'open_shop' | 'open_updates' | 'open_chat' | 'open_leaderboard' | 'open_profile';
+  actionData?: {
+    partnerUid?: string;
+    partnerName?: string;
+    partnerPhoto?: string;
+    partnerColor?: string;
+    gameId?: string;
+  };
+}
+

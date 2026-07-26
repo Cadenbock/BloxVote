@@ -98,6 +98,20 @@
         "authorEmail": { "type": "string" }
       },
       "required": ["title", "category", "changes", "timestamp"]
+    },
+    "AppNotification": {
+      "title": "AppNotification",
+      "description": "In-app notifications for direct messages, rewards, system updates, and streak alerts.",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "isRead": { "type": "boolean" },
+        "linkAction": { "type": "string" }
+      },
+      "required": ["type", "title", "message", "isRead"]
     }
   },
   "firestore": {
@@ -128,6 +142,10 @@
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "User profile document containing coins and cosmetics."
+    },
+    "/users/{userId}/notifications/{notificationId}": {
+      "schema": "AppNotification",
+      "description": "Subcollection of user notifications."
     }
   }
 }
