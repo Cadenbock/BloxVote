@@ -113,27 +113,21 @@ export function filterChatMessage(input: string, extraCustomWords?: string[]): {
   // 3. Normalize for profanity detection
   const normalized = normalizeText(input);
 
-  // 4. Scan and replace profane words using word boundary checks
+  // 4. Scan and replace profane words (including when embedded inside another word/phrase)
   allPatterns.forEach((badWord) => {
     if (!badWord) return;
     const escaped = escapeRegExp(badWord);
-    const isShortWord = badWord.length <= 4;
-    const regex = isShortWord
-      ? new RegExp(`\\b${escaped}\\b`, 'gi')
-      : new RegExp(`\\b${escaped}\\b|${escaped}`, 'gi');
+    // Matches any non-whitespace word or phrase block that contains badWord anywhere inside it
+    const wordContainingRegex = new RegExp(`\\S*${escaped}\\S*`, 'gi');
 
-    if (regex.test(normalized)) {
+    if (wordContainingRegex.test(normalized) || wordContainingRegex.test(cleanText)) {
       hasProfanity = true;
       if (!flaggedWords.includes(badWord)) {
         flaggedWords.push(badWord);
       }
 
-      // Replace matching word in cleanText with asterisks
-      const targetRegex = isShortWord
-        ? new RegExp(`\\b${escaped}\\b`, 'gi')
-        : new RegExp(`\\b${escaped}\\b|${escaped}`, 'gi');
-
-      cleanText = cleanText.replace(targetRegex, (match) => '*'.repeat(match.length));
+      // Replace the entire containing word/phrase with asterisks
+      cleanText = cleanText.replace(wordContainingRegex, (match) => '*'.repeat(match.length));
     }
   });
 
