@@ -1,13 +1,44 @@
-// Chat Filter Utility for BloxVote Global Chat
-// Protects community guidelines by filtering profanity, slurs, and spam
+// Chat Filter Utility for BloxVote Global Chat & Direct Messages
+// Protects community guidelines by filtering profanity, slurs, spam, links, and custom admin-defined words
 
-const PROFANITY_PATTERNS = [
+export const DEFAULT_PROFANITY_PATTERNS = [
   'fuck', 'shit', 'asshole', 'bitch', 'cunt', 'dick', 'pussy', 'bastard',
   'slut', 'whore', 'faggot', 'nigger', 'nigga', 'retard', 'cock', 'penis',
   'vagina', 'dumbass', 'jackass', 'motherfucker', 'stfu', 'wtf', 'bs',
   'kys', 'nazi', 'hitler', 'douche', 'dipshit', 'prick', 'goon', 'gooner',
   'fat', 'fatty', 'ugly', 'loser', 'hoe', 'thot', 'idiot', 'moron'
 ];
+
+// Regex for URLs, domains, and web links
+export const URL_REGEX = /(?:https?:\/\/|ftps?:\/\/|www\.)[^\s]+|(?:[a-zA-Z0-9-]+\.)+(?:com|org|net|io|gg|co|me|app|dev|xyz|ca|uk|us|de|tv|link|info|biz|site|online|store|tech|live|top|pro|edu|gov|ru|cn|jp)(?::\d+)?(?:\/[^\s]*)?/gi;
+
+/**
+ * Checks whether a given string contains a URL or website domain link
+ */
+export function containsLink(text: string): boolean {
+  if (!text) return false;
+  return new RegExp(URL_REGEX.source, 'gi').test(text);
+}
+
+let customBannedWords: string[] = [];
+
+/**
+ * Update the global list of custom banned words in memory
+ */
+export function setCustomBannedWords(words: string[]): void {
+  if (Array.isArray(words)) {
+    customBannedWords = words
+      .map((w) => (typeof w === 'string' ? w.trim().toLowerCase() : ''))
+      .filter(Boolean);
+  }
+}
+
+/**
+ * Get current list of custom banned words
+ */
+export function getCustomBannedWords(): string[] {
+  return [...customBannedWords];
+}
 
 // Common leetspeak substitutions
 const LEET_MAP: Record<string, string> = {
@@ -34,53 +65,73 @@ function normalizeText(text: string): string {
   return normalized;
 }
 
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /**
  * Filters and sanitizes text message.
- * Replaces profane/harassing words with asterisks (e.g. ****).
+ * Replaces profane/harassing words with asterisks (e.g. ****) and removes links.
  */
-export function filterChatMessage(input: string): {
+export function filterChatMessage(input: string, extraCustomWords?: string[]): {
   cleanText: string;
   hasProfanity: boolean;
   isOnlyProfanity: boolean;
   hasSpam: boolean;
+  hasLink: boolean;
   flaggedWords: string[];
 } {
   if (!input || typeof input !== 'string') {
-    return { cleanText: '', hasProfanity: false, isOnlyProfanity: false, hasSpam: false, flaggedWords: [] };
+    return { cleanText: '', hasProfanity: false, isOnlyProfanity: false, hasSpam: false, hasLink: false, flaggedWords: [] };
   }
 
   let cleanText = input;
   let hasProfanity = false;
   const flaggedWords: string[] = [];
 
-  // 1. Check for spam/repetitive characters (e.g. "aaaaa", "hhhhhh")
+  // 1. Check for links / URLs
+  const activeUrlRegex = new RegExp(URL_REGEX.source, 'gi');
+  const hasLink = activeUrlRegex.test(input);
+  if (hasLink) {
+    cleanText = cleanText.replace(activeUrlRegex, '[link removed]');
+  }
+
+  // Combine default, global custom, and any passed extra words
+  const allPatterns = Array.from(new Set([
+    ...DEFAULT_PROFANITY_PATTERNS,
+    ...customBannedWords,
+    ...(extraCustomWords || [])
+  ]));
+
+  // 2. Check for spam/repetitive characters (e.g. "aaaaa", "hhhhhh")
   const repeatRegex = /(.)\1{9,}/gi;
   const hasSpam = repeatRegex.test(input);
   if (hasSpam) {
     cleanText = cleanText.replace(/(.)\1{7,}/gi, '$1$1$1');
   }
 
-  // 2. Normalize for profanity detection
+  // 3. Normalize for profanity detection
   const normalized = normalizeText(input);
 
-  // 3. Scan and replace profane words using word boundary checks
-  PROFANITY_PATTERNS.forEach((badWord) => {
-    // Word boundary check for short words like 'fat', 'goon', 'bs'
+  // 4. Scan and replace profane words using word boundary checks
+  allPatterns.forEach((badWord) => {
+    if (!badWord) return;
+    const escaped = escapeRegExp(badWord);
     const isShortWord = badWord.length <= 4;
-    const regex = isShortWord 
-      ? new RegExp(`\\b${badWord}\\b`, 'gi')
-      : new RegExp(`\\b${badWord}\\b|${badWord}`, 'gi');
+    const regex = isShortWord
+      ? new RegExp(`\\b${escaped}\\b`, 'gi')
+      : new RegExp(`\\b${escaped}\\b|${escaped}`, 'gi');
 
     if (regex.test(normalized)) {
       hasProfanity = true;
       if (!flaggedWords.includes(badWord)) {
         flaggedWords.push(badWord);
       }
-      
+
       // Replace matching word in cleanText with asterisks
       const targetRegex = isShortWord
-        ? new RegExp(`\\b${badWord}\\b`, 'gi')
-        : new RegExp(`\\b${badWord}\\b|${badWord}`, 'gi');
+        ? new RegExp(`\\b${escaped}\\b`, 'gi')
+        : new RegExp(`\\b${escaped}\\b|${escaped}`, 'gi');
 
       cleanText = cleanText.replace(targetRegex, (match) => '*'.repeat(match.length));
     }
@@ -94,6 +145,8 @@ export function filterChatMessage(input: string): {
     hasProfanity,
     isOnlyProfanity,
     hasSpam,
+    hasLink,
     flaggedWords,
   };
 }
+

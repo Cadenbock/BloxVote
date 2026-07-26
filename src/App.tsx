@@ -31,6 +31,7 @@ import AnnouncementBanner from './components/AnnouncementBanner';
 import UpdateLogsModal from './components/UpdateLogsModal';
 import ShopModal from './components/ShopModal';
 import PublicChat from './components/PublicChat';
+import DirectMessagesModal from './components/DirectMessagesModal';
 import { getNameColorStyle, getBackgroundThemeStyle, NameColorItem, BackgroundThemeItem } from './lib/shopData';
 import { useToast } from './components/Toast';
 import { logActivity } from './lib/activity';
@@ -166,6 +167,8 @@ function App() {
   const [userStreak, setUserStreak] = useState<UserStreakData | null>(null);
   const [announcement, setAnnouncement] = useState<GlobalAnnouncement | null>(null);
   const [isUpdateLogsOpen, setIsUpdateLogsOpen] = useState(false);
+  const [isDMOpen, setIsDMOpen] = useState(false);
+  const [dmTargetUser, setDmTargetUser] = useState<{ uid: string; displayName: string; photoURL?: string; color?: string } | null>(null);
   const [previewThemeId, setPreviewThemeId] = useState<string | null>(null);
   const [userProfileData, setUserProfileData] = useState<UserProfileData>({
     coins: 50,
@@ -191,6 +194,16 @@ function App() {
     }
 
     const userRef = doc(db, 'users', user.uid);
+
+    // Sync user email & displayName to Firestore document for player search
+    if (user.email || user.displayName) {
+      setDoc(userRef, {
+        email: user.email || '',
+        displayName: user.displayName || 'Player',
+        photoURL: user.photoURL || ''
+      }, { merge: true }).catch(console.error);
+    }
+
     const unsubscribe = onSnapshot(userRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
@@ -213,6 +226,7 @@ function App() {
           purchasedThemes: ['default'],
           displayName: user.displayName || '',
           photoURL: user.photoURL || '',
+          email: user.email || ''
         };
         setDoc(userRef, initialProfile, { merge: true }).catch(console.error);
       }
@@ -739,6 +753,17 @@ function App() {
     toast("Leaderboard CSV downloaded! 📊", "success");
   };
 
+  const handleOpenDM = (targetUser?: { uid: string; displayName: string; photoURL?: string; color?: string }) => {
+    if (!user) {
+      signIn();
+      return;
+    }
+    if (targetUser) {
+      setDmTargetUser(targetUser);
+    }
+    setIsDMOpen(true);
+  };
+
   const filteredGames = games.filter(game => 
     (game.name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
     (game.creator || '').toLowerCase().includes((searchQuery || '').toLowerCase())
@@ -816,6 +841,19 @@ function App() {
                 <Coins size={15} className="text-amber-400 fill-amber-400" />
                 <span>{userProfileData.coins.toLocaleString()} Coins</span>
               </button>
+
+              {/* DMs Quick Pill */}
+              {user && (
+                <button
+                  onClick={() => handleOpenDM()}
+                  className="flex items-center gap-1.5 rounded-full border border-violet-500/40 bg-gradient-to-r from-violet-600/20 to-fuchsia-600/20 px-3.5 py-1.5 text-xs font-black text-violet-300 transition-all hover:bg-violet-600/30 active:scale-95 shadow-md shadow-violet-950/30 relative"
+                  title="Open Direct Messages"
+                >
+                  <MessageSquare size={14} className="text-violet-400" />
+                  <span>DMs</span>
+                  <span className="flex h-2 w-2 rounded-full bg-violet-400 animate-ping" />
+                </button>
+              )}
 
               {user ? (
                 <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
@@ -1093,6 +1131,7 @@ function App() {
                 user={user}
                 profileData={userProfileData}
                 isAdmin={isAdmin}
+                onOpenDM={handleOpenDM}
               />
             </motion.div>
           )}
@@ -1159,6 +1198,17 @@ function App() {
         onOpenAdminWithTab={(tab) => {
           setIsAdminDashboardOpen(true);
         }}
+      />
+
+      <DirectMessagesModal
+        isOpen={isDMOpen}
+        onClose={() => {
+          setIsDMOpen(false);
+          setDmTargetUser(null);
+        }}
+        currentUser={user}
+        userProfileData={userProfileData}
+        initialTargetUser={dmTargetUser}
       />
     </div>
   );

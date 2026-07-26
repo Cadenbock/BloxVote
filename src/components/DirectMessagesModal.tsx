@@ -13,7 +13,8 @@ import {
   where,
   getDocs,
   getDoc,
-  writeBatch
+  writeBatch,
+  limit
 } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 import {
@@ -37,7 +38,7 @@ import {
 } from 'lucide-react';
 import { db } from '../firebase';
 import { DirectMessage, Conversation, UserProfileData } from '../types';
-import { filterChatMessage } from '../lib/chatFilter';
+import { filterChatMessage, setCustomBannedWords } from '../lib/chatFilter';
 import { getNameColorStyle } from '../lib/shopData';
 import { useToast } from './Toast';
 import { cn } from '../lib/utils';
@@ -76,7 +77,21 @@ export default function DirectMessagesModal({
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [messageText, setMessageText] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Array<{ uid: string; displayName: string; photoURL?: string }>>([]);
+  const [searchResults, setSearchResults] = useState<Array<{ uid: string; displayName: string; photoURL?: string; email?: string }>>([]);
+
+  // Subscribe to live custom banned words list from Firestore
+  useEffect(() => {
+    const filterRef = doc(db, 'settings', 'chatFilter');
+    const unsubscribe = onSnapshot(filterRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (Array.isArray(data.words)) {
+          setCustomBannedWords(data.words);
+        }
+      }
+    }, (err) => console.warn('Filter listener in DM warning:', err));
+    return () => unsubscribe();
+  }, []);
   const [isSearching, setIsSearching] = useState(false);
   const [targetLanguage, setTargetLanguage] = useState<string>('English');
   const [autoTranslateEnabled, setAutoTranslateEnabled] = useState<boolean>(true);
@@ -201,7 +216,7 @@ export default function DirectMessagesModal({
     return () => unsubscribe();
   }, [currentUser, activeConversationId, isOpen]);
 
-  // Search users for new DM
+  // Search users for new DM by Gmail address or display name
   useEffect(() => {
     if (!searchQuery.trim() || searchQuery.length < 2 || !currentUser) {
       setSearchResults([]);
@@ -212,25 +227,64 @@ export default function DirectMessagesModal({
     setIsSearching(true);
     const searchTimer = setTimeout(async () => {
       try {
-        const usersRef = collection(db, 'users');
-        const q = query(usersRef);
-        const snapshot = await getDocs(q);
-        const matched: Array<{ uid: string; displayName: string; photoURL?: string }> = [];
+        const queryLower = searchQuery.toLowerCase().trim();
+        const foundMap = new Map<string, { uid: string; displayName: string; photoURL?: string; email?: string }>();
 
-        snapshot.docs.forEach((d) => {
-          if (d.id === currentUser.uid) return;
-          const data = d.data();
-          const name = data.displayName || 'Player';
-          if (name.toLowerCase().includes(searchQuery.toLowerCase())) {
-            matched.push({
-              uid: d.id,
-              displayName: name,
-              photoURL: data.photoURL
-            });
-          }
-        });
+        // 1. Search in `users` collection
+        try {
+          const usersRef = collection(db, 'users');
+          const usersSnapshot = await getDocs(query(usersRef));
+          usersSnapshot.docs.forEach((d) => {
+            if (d.id === currentUser.uid) return;
+            const data = d.data();
+            const email = (data.email || '').toLowerCase();
+            const name = (data.displayName || 'Player').toLowerCase();
 
-        setSearchResults(matched.slice(0, 5));
+            if (email.includes(queryLower) || name.includes(queryLower)) {
+              foundMap.set(d.id, {
+                uid: d.id,
+                displayName: data.displayName || 'Player',
+                photoURL: data.photoURL || '',
+                email: data.email || ''
+              });
+            }
+          });
+        } catch (e) {
+          console.warn('Error querying users collection:', e);
+        }
+
+        // 2. Search in `activities` collection (voters, active players)
+        try {
+          const activitiesRef = collection(db, 'activities');
+          const actSnapshot = await getDocs(query(activitiesRef, limit(100)));
+          actSnapshot.docs.forEach((d) => {
+            const data = d.data();
+            const uid = data.userId;
+            if (!uid || uid === 'guest' || uid === currentUser.uid) return;
+            const email = (data.userEmail || '').toLowerCase();
+            const name = (data.userDisplayName || 'Player').toLowerCase();
+
+            if (email.includes(queryLower) || name.includes(queryLower)) {
+              if (!foundMap.has(uid)) {
+                foundMap.set(uid, {
+                  uid,
+                  displayName: data.userDisplayName || 'Player',
+                  photoURL: data.userPhotoURL || '',
+                  email: data.userEmail || ''
+                });
+              } else {
+                const existing = foundMap.get(uid)!;
+                if (!existing.email && data.userEmail) existing.email = data.userEmail;
+                if (!existing.photoURL && data.userPhotoURL) existing.photoURL = data.userPhotoURL;
+              }
+            }
+          });
+        } catch (e) {
+          console.warn('Error querying activities collection:', e);
+        }
+
+        const resultsArray = Array.from(foundMap.values());
+        setSearchResults(resultsArray.slice(0, 8));
       } catch (err) {
         console.error('Error searching players for DM:', err);
       } finally {
@@ -329,6 +383,12 @@ export default function DirectMessagesModal({
     try {
       // 1. Filter Message with chatFilter
       const filterResult = filterChatMessage(rawText);
+
+      if (filterResult.hasLink) {
+        toast('Sending links is strictly prohibited in direct messages 🚫', 'error');
+        setIsSending(false);
+        return;
+      }
 
       // Identify partner UID in current active conversation
       const currentConv = conversations.find((c) => c.id === activeConversationId);
@@ -550,7 +610,7 @@ export default function DirectMessagesModal({
                   <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
                   <input
                     type="text"
-                    placeholder="Search player or start DM..."
+                    placeholder="Search player by Gmail address..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full rounded-2xl border border-zinc-800 bg-zinc-900/80 pl-9 pr-4 py-2 text-xs text-white placeholder-zinc-500 focus:border-violet-500/60 focus:outline-none transition-all"
@@ -598,7 +658,7 @@ export default function DirectMessagesModal({
                       )}
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-bold text-white truncate">{user.displayName}</p>
-                        <span className="text-[10px] text-zinc-500">Tap to message</span>
+                        <p className="text-[10px] text-violet-300 font-mono truncate">{user.email || 'No email recorded'}</p>
                       </div>
                     </button>
                   ))}

@@ -65,6 +65,7 @@ import { Game, Activity, AdminUser, AdminChatMessage, UpdateLog, ChatFlag } from
 import { useToast } from './Toast';
 import { logActivity } from '../lib/activity';
 import { cn } from '../lib/utils';
+import { filterChatMessage, DEFAULT_PROFANITY_PATTERNS } from '../lib/chatFilter';
 
 interface AdminDashboardProps {
   isOpen: boolean;
@@ -98,13 +99,20 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
   const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<any>(null);
   const [announcementUpdatedBy, setAnnouncementUpdatedBy] = useState<string>('');
 
-  // Admin Chat state
+  // Admin Chat & Filter state
   const [chatMessages, setChatMessages] = useState<AdminChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isSendingChat, setIsSendingChat] = useState(false);
-  const [chatSubTab, setChatSubTab] = useState<'staff' | 'flags'>('staff');
+  const [chatSubTab, setChatSubTab] = useState<'staff' | 'flags' | 'filter'>('staff');
   const [chatFlags, setChatFlags] = useState<ChatFlag[]>([]);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Custom Censored Words state
+  const [customCensoredWords, setCustomCensoredWords] = useState<string[]>([]);
+  const [newCensoredWordInput, setNewCensoredWordInput] = useState<string>('');
+  const [filterTestInput, setFilterTestInput] = useState<string>('');
+  const [searchCensoredQuery, setSearchCensoredQuery] = useState<string>('');
+  const [isSavingWord, setIsSavingWord] = useState<boolean>(false);
 
   // User Ban State
   const [bannedUsersMap, setBannedUsersMap] = useState<Record<string, any>>({});
@@ -184,6 +192,61 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
 
     return () => unsubscribe();
   }, [isOpen]);
+
+  // Real-time listener for Censored Words in settings/chatFilter
+  useEffect(() => {
+    if (!isOpen) return;
+    const filterRef = doc(db, 'settings', 'chatFilter');
+    const unsubscribe = onSnapshot(filterRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (Array.isArray(data.words)) {
+          setCustomCensoredWords(data.words);
+        }
+      }
+    }, (err) => {
+      console.warn('Censored words listener warning:', err);
+    });
+
+    return () => unsubscribe();
+  }, [isOpen]);
+
+  const handleAddCensoredWord = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const wordToAdd = newCensoredWordInput.trim().toLowerCase();
+    if (!wordToAdd) return;
+
+    if (customCensoredWords.includes(wordToAdd)) {
+      toast(`"${wordToAdd}" is already in the censored list!`, 'info');
+      return;
+    }
+
+    setIsSavingWord(true);
+    const updated = [...customCensoredWords, wordToAdd];
+    try {
+      await setDoc(doc(db, 'settings', 'chatFilter'), { words: updated }, { merge: true });
+      setCustomCensoredWords(updated);
+      setNewCensoredWordInput('');
+      toast(`Added "${wordToAdd}" to Global Chat & DM filter!`, 'success');
+      logActivity('admin_add', 'Censored Word Added', `Added custom censored word: "${wordToAdd}"`);
+    } catch (err: any) {
+      toast(`Failed to add word: ${err.message}`, 'error');
+    } finally {
+      setIsSavingWord(false);
+    }
+  };
+
+  const handleRemoveCensoredWord = async (wordToRemove: string) => {
+    const updated = customCensoredWords.filter((w) => w !== wordToRemove);
+    try {
+      await setDoc(doc(db, 'settings', 'chatFilter'), { words: updated }, { merge: true });
+      setCustomCensoredWords(updated);
+      toast(`Removed "${wordToRemove}" from censored list.`, 'info');
+      logActivity('admin_remove', 'Censored Word Removed', `Removed custom censored word: "${wordToRemove}"`);
+    } catch (err: any) {
+      toast(`Failed to update list: ${err.message}`, 'error');
+    }
+  };
 
   const handleDeleteChatFlag = async (flagId: string) => {
     try {
@@ -1871,6 +1934,25 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
                         </span>
                       )}
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setChatSubTab('filter')}
+                      className={cn(
+                        'px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 relative',
+                        chatSubTab === 'filter'
+                          ? 'bg-violet-600 text-white shadow-sm'
+                          : 'bg-zinc-900 text-violet-300 hover:bg-zinc-850 border border-violet-500/30'
+                      )}
+                    >
+                      <ShieldAlert size={13} />
+                      Censored Words
+                      {customCensoredWords.length > 0 && (
+                        <span className="bg-violet-500 text-white px-1.5 py-0.5 rounded-full text-[10px] font-black">
+                          {customCensoredWords.length}
+                        </span>
+                      )}
+                    </button>
                   </div>
                 </div>
 
@@ -1997,6 +2079,145 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
                         );
                       })
                     )}
+                  </div>
+                ) : chatSubTab === 'filter' ? (
+                  /* Sub-tab 3: Censored Words & Chat Filter Manager */
+                  <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-zinc-950/60">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800 pb-3">
+                      <div>
+                        <h4 className="text-sm font-black text-white flex items-center gap-2">
+                          <ShieldAlert size={16} className="text-violet-400" />
+                          Custom Prohibited Terms & Censorship Engine
+                        </h4>
+                        <p className="text-xs text-zinc-400 mt-0.5">
+                          Add or remove custom words that will be automatically censored in Global Chat and Direct Messages.
+                        </p>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-violet-300 bg-violet-500/10 border border-violet-500/20 px-3 py-1 rounded-xl self-start">
+                        {customCensoredWords.length} Custom Term{customCensoredWords.length === 1 ? '' : 's'} Active
+                      </span>
+                    </div>
+
+                    {/* Add Word Form & Live Filter Test Box */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Form to add new term */}
+                      <form onSubmit={handleAddCensoredWord} className="rounded-2xl border border-violet-500/30 bg-zinc-900/60 p-4 space-y-3">
+                        <label className="text-xs font-bold uppercase tracking-wider text-violet-300 flex items-center gap-1.5">
+                          <Plus size={14} /> Add Prohibited Word or Phrase
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={newCensoredWordInput}
+                            onChange={(e) => setNewCensoredWordInput(e.target.value)}
+                            placeholder="e.g. scam, hack, discord.gg"
+                            className="flex-1 rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:border-violet-500/60 focus:outline-none"
+                          />
+                          <button
+                            type="submit"
+                            disabled={isSavingWord || !newCensoredWordInput.trim()}
+                            className="flex items-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-violet-500 disabled:opacity-50 transition-all shadow-md shadow-violet-950/40 shrink-0"
+                          >
+                            <Plus size={14} /> Add
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-zinc-500">
+                          Matches whole words or phrases case-insensitively across chat messages.
+                        </p>
+                      </form>
+
+                      {/* Live Filter Tester Box */}
+                      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 space-y-2">
+                        <label className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                          <Zap size={14} className="text-amber-400" /> Live Filter Sandbox
+                        </label>
+                        <input
+                          type="text"
+                          value={filterTestInput}
+                          onChange={(e) => setFilterTestInput(e.target.value)}
+                          placeholder="Type test message here..."
+                          className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-2 text-xs text-white placeholder-zinc-500 focus:border-amber-500/60 focus:outline-none"
+                        />
+                        {filterTestInput ? (
+                          <div className="p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 space-y-1">
+                            <div className="flex justify-between text-[10px] font-bold">
+                              <span className="text-zinc-400">Result:</span>
+                              {filterChatMessage(filterTestInput, customCensoredWords).hasProfanity ? (
+                                <span className="text-rose-400 uppercase">Filtered</span>
+                              ) : (
+                                <span className="text-emerald-400 uppercase">Clean</span>
+                              )}
+                            </div>
+                            <p className="text-xs font-mono text-zinc-200 break-words">
+                              {filterChatMessage(filterTestInput, customCensoredWords).cleanText}
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-zinc-500 italic">
+                            Type above to test how words get filtered live.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Custom Words List */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                          Custom Censored Words List
+                        </span>
+                        <div className="relative w-48 sm:w-64">
+                          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                          <input
+                            type="text"
+                            placeholder="Filter custom words..."
+                            value={searchCensoredQuery}
+                            onChange={(e) => setSearchCensoredQuery(e.target.value)}
+                            className="w-full rounded-xl border border-zinc-800 bg-zinc-900/80 pl-8 pr-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:border-violet-500 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      {customCensoredWords.length === 0 ? (
+                        <div className="text-center py-8 text-xs text-zinc-500 rounded-2xl border border-dashed border-zinc-800">
+                          No custom censored words added yet. Built-in profanity filter is active.
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {customCensoredWords
+                            .filter((w) => w.toLowerCase().includes(searchCensoredQuery.toLowerCase().trim()))
+                            .map((word) => (
+                              <div
+                                key={word}
+                                className="flex items-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-1.5 text-xs font-bold text-violet-200 group hover:border-violet-500/50 transition-all"
+                              >
+                                <span className="font-mono">"{word}"</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveCensoredWord(word)}
+                                  className="text-zinc-400 hover:text-rose-400 p-0.5 rounded-md hover:bg-rose-500/10 transition-colors"
+                                  title={`Delete "${word}"`}
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Built-in Defaults Summary */}
+                    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <Shield size={14} className="text-emerald-400" /> Built-in Baseline Patterns ({DEFAULT_PROFANITY_PATTERNS.length})
+                        </span>
+                        <span className="text-[10px] text-zinc-500">Always Active</span>
+                      </div>
+                      <p className="text-[11px] text-zinc-500 leading-relaxed">
+                        In addition to custom terms above, BloxVote automatically protects users from common profanity, slurs, harassment terms, and leetspeak substitutions (e.g. @, 1, 0, 3).
+                      </p>
+                    </div>
                   </div>
                 ) : (
                   /* Sub-tab 2: Staff Chat Feed & Form */

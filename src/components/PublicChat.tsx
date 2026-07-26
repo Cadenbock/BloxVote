@@ -16,7 +16,7 @@ import { MessageSquare, Send, Trash2, LogIn, Sparkles, Smile, ShieldCheck, User 
 import { db, signIn } from '../firebase';
 import { PublicChatMessage, UserProfileData } from '../types';
 import { getNameColorStyle } from '../lib/shopData';
-import { filterChatMessage } from '../lib/chatFilter';
+import { filterChatMessage, setCustomBannedWords } from '../lib/chatFilter';
 import { useToast } from './Toast';
 
 interface PublicChatProps {
@@ -46,6 +46,20 @@ export default function PublicChat({ user, profileData, isAdmin, onOpenDM }: Pub
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  // Real-time listener for custom banned words settings
+  useEffect(() => {
+    const filterRef = doc(db, 'settings', 'chatFilter');
+    const unsubscribe = onSnapshot(filterRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (Array.isArray(data.words)) {
+          setCustomBannedWords(data.words);
+        }
+      }
+    }, (err) => console.warn('Filter listener in PublicChat warning:', err));
+    return () => unsubscribe();
+  }, []);
 
   // Real-time listener for current user's ban status
   useEffect(() => {
@@ -130,7 +144,12 @@ export default function PublicChat({ user, profileData, isAdmin, onOpenDM }: Pub
       return;
     }
 
-    const { cleanText, hasProfanity, isOnlyProfanity, hasSpam, flaggedWords } = filterChatMessage(trimmed);
+    const { cleanText, hasProfanity, isOnlyProfanity, hasSpam, hasLink, flaggedWords } = filterChatMessage(trimmed);
+
+    if (hasLink) {
+      toast('Sending links is strictly prohibited in chat 🚫', 'error');
+      return;
+    }
 
     // If profanity or harassment is detected, log alert for admins
     if (hasProfanity || isOnlyProfanity) {
