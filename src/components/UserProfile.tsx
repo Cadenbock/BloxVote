@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Trophy, ThumbsUp, ExternalLink, Calendar, Mail, Flame, Award, Trash2, Zap, Sparkles, Coins, ShoppingBag, Palette } from 'lucide-react';
 import { Game, UserStreakData, UserProfileData } from '../types';
-import { getNameColorStyle, getBackgroundThemeStyle, getFontItemStyle } from '../lib/shopData';
+import { getNameColorStyle, getBackgroundThemeStyle, getFontItemStyle, getTitleItemStyle } from '../lib/shopData';
 import { User } from 'firebase/auth';
 
 interface UserProfileProps {
@@ -137,6 +137,14 @@ export default function UserProfile({
 
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
+                    {profileData?.equippedTitle && profileData.equippedTitle !== 'default' && (() => {
+                      const titleStyle = getTitleItemStyle(profileData.equippedTitle);
+                      return titleStyle.title ? (
+                        <span className={`px-2 py-0.5 rounded text-xs font-black tracking-tight ${titleStyle.tagClass}`}>
+                          {titleStyle.title}
+                        </span>
+                      ) : null;
+                    })()}
                     <h2 className={`text-xl sm:text-2xl font-black tracking-tight truncate ${getNameColorStyle(profileData?.equippedColor).className}`}>
                       {user.displayName || 'Anonymous Voter'}
                     </h2>

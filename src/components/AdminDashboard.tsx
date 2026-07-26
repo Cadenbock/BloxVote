@@ -12,7 +12,8 @@ import {
   updateDoc,
   serverTimestamp,
   limit,
-  increment
+  increment,
+  arrayUnion
 } from 'firebase/firestore';
 import {
   Shield,
@@ -46,7 +47,9 @@ import {
   Coins,
   Hammer,
   Ban,
-  ShieldAlert
+  ShieldAlert,
+  XCircle,
+  Award
 } from 'lucide-react';
 import {
   BarChart,
@@ -61,7 +64,7 @@ import {
   Pie
 } from 'recharts';
 import { db, auth } from '../firebase';
-import { Game, Activity, AdminUser, AdminChatMessage, UpdateLog, ChatFlag } from '../types';
+import { Game, Activity, AdminUser, AdminChatMessage, UpdateLog, ChatFlag, CustomTitleRequest } from '../types';
 import { useToast } from './Toast';
 import { logActivity } from '../lib/activity';
 import { cn } from '../lib/utils';
@@ -74,7 +77,7 @@ interface AdminDashboardProps {
   onVote: (gameId: string) => Promise<void>;
 }
 
-type AdminTab = 'overview' | 'games' | 'coins' | 'announcement' | 'updates' | 'chat' | 'admins' | 'activity';
+type AdminTab = 'overview' | 'games' | 'coins' | 'titles' | 'announcement' | 'updates' | 'chat' | 'admins' | 'activity';
 
 export default function AdminDashboard({ isOpen, onClose, games, onVote }: AdminDashboardProps) {
   const { toast } = useToast();
@@ -82,6 +85,12 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
   const [activities, setActivities] = useState<Activity[]>([]);
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [searchGameQuery, setSearchGameQuery] = useState('');
+
+  // Custom Title Requests State
+  const [customTitleRequests, setCustomTitleRequests] = useState<CustomTitleRequest[]>([]);
+  const [declineModalReq, setDeclineModalReq] = useState<CustomTitleRequest | null>(null);
+  const [declineReason, setDeclineReason] = useState<string>('Title violates community guidelines or contains inappropriate words.');
+  const [isProcessingTitleReq, setIsProcessingTitleReq] = useState<string | null>(null);
 
   // User Coins & Economy State
   const [userProfiles, setUserProfiles] = useState<any[]>([]);
@@ -157,6 +166,111 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
 
     return () => unsubscribe();
   }, [isOpen, activeTab]);
+
+  // Real-time Custom Title Requests Listener
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const reqQuery = query(collection(db, 'customTitleRequests'), orderBy('requestedAt', 'desc'), limit(50));
+    const unsubscribe = onSnapshot(reqQuery, (snapshot) => {
+      const list = snapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      } as CustomTitleRequest));
+      setCustomTitleRequests(list);
+    }, (err) => {
+      console.warn('Custom title requests listener warning:', err);
+    });
+
+    return () => unsubscribe();
+  }, [isOpen]);
+
+  const handleAcceptCustomTitleRequest = async (req: CustomTitleRequest) => {
+    setIsProcessingTitleReq(req.id);
+    try {
+      // 1. Update request status to accepted
+      await updateDoc(doc(db, 'customTitleRequests', req.id), {
+        status: 'accepted',
+        reviewedAt: serverTimestamp(),
+        reviewedBy: currentUser?.email || 'Admin'
+      });
+
+      // 2. Grant title to user
+      const userRef = doc(db, 'users', req.userId);
+      await updateDoc(userRef, {
+        equippedTitle: req.requestedTitle,
+        purchasedTitles: arrayUnion(req.requestedTitle)
+      });
+
+      // 3. Send notification to user
+      await addDoc(collection(db, 'users', req.userId, 'notifications'), {
+        title: 'Custom Title Approved! 🎉',
+        message: `Your custom title "${req.requestedTitle}" has been ACCEPTED by admins and equipped to your name!`,
+        type: 'shop',
+        read: false,
+        timestamp: serverTimestamp()
+      });
+
+      await logActivity(
+        'admin_add',
+        'Approved Custom Title',
+        `Approved custom title "${req.requestedTitle}" for ${req.userDisplayName}`
+      );
+
+      toast(`Approved custom title "${req.requestedTitle}"!`, 'success');
+    } catch (err: any) {
+      console.error('Failed to accept custom title:', err);
+      toast(`Failed to accept title: ${err.message}`, 'error');
+    } finally {
+      setIsProcessingTitleReq(null);
+    }
+  };
+
+  const handleDeclineCustomTitleRequest = async () => {
+    if (!declineModalReq) return;
+    const req = declineModalReq;
+    const reason = declineReason.trim() || 'Violated community guidelines.';
+    setIsProcessingTitleReq(req.id);
+
+    try {
+      // 1. Update request status to declined
+      await updateDoc(doc(db, 'customTitleRequests', req.id), {
+        status: 'declined',
+        rejectionReason: reason,
+        reviewedAt: serverTimestamp(),
+        reviewedBy: currentUser?.email || 'Admin'
+      });
+
+      // 2. Refund 1,000 BloxCoins to user
+      const userRef = doc(db, 'users', req.userId);
+      await updateDoc(userRef, {
+        coins: increment(1000)
+      });
+
+      // 3. Send notification to user
+      await addDoc(collection(db, 'users', req.userId, 'notifications'), {
+        title: 'Custom Title Request Declined',
+        message: `Your custom title request "${req.requestedTitle}" was declined. Reason: ${reason}. Your 1,000 BloxCoins have been refunded to your balance.`,
+        type: 'system',
+        read: false,
+        timestamp: serverTimestamp()
+      });
+
+      await logActivity(
+        'admin_remove',
+        'Declined Custom Title',
+        `Declined title "${req.requestedTitle}" for ${req.userDisplayName}. Reason: ${reason}`
+      );
+
+      toast(`Declined custom title and refunded 1,000 coins to ${req.userDisplayName}`, 'info');
+      setDeclineModalReq(null);
+    } catch (err: any) {
+      console.error('Failed to decline custom title:', err);
+      toast(`Failed to decline title: ${err.message}`, 'error');
+    } finally {
+      setIsProcessingTitleReq(null);
+    }
+  };
 
   // Real-time Chat Flags Listener
   useEffect(() => {
@@ -871,6 +985,24 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
               </button>
 
               <button
+                onClick={() => setActiveTab('titles')}
+                className={cn(
+                  'flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold transition-all relative shrink-0 whitespace-nowrap',
+                  activeTab === 'titles'
+                    ? 'bg-amber-500 text-black shadow-md'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-850'
+                )}
+              >
+                <Award size={14} />
+                Title Requests
+                {customTitleRequests.filter(r => r.status === 'pending').length > 0 && (
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[10px] font-black text-black">
+                    {customTitleRequests.filter(r => r.status === 'pending').length}
+                  </span>
+                )}
+              </button>
+
+              <button
                 onClick={() => setActiveTab('announcement')}
                 className={cn(
                   'flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold transition-all relative shrink-0 whitespace-nowrap',
@@ -1500,6 +1632,148 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
                       </div>
                     )}
                   </div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* CUSTOM TITLE REQUESTS TAB */}
+            {activeTab === 'titles' && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-6"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-850 pb-4">
+                  <div>
+                    <h3 className="text-lg font-black text-white flex items-center gap-2">
+                      <Award className="text-amber-400" size={20} />
+                      Custom Title Moderation & Approvals
+                    </h3>
+                    <p className="text-xs text-zinc-400 mt-1">
+                      Players spend 1,000 BloxCoins to request custom titles. Accept to equip the title to their name, or Decline to refund their 1,000 coins.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                      <Clock size={14} />
+                      <span>{customTitleRequests.filter(r => r.status === 'pending').length} Pending</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Custom Title Requests List */}
+                <div className="space-y-3">
+                  {customTitleRequests.length === 0 ? (
+                    <div className="text-center py-16 border border-dashed border-zinc-800 rounded-3xl bg-zinc-900/20">
+                      <Award size={40} className="text-zinc-600 mx-auto mb-3" />
+                      <h4 className="text-sm font-bold text-zinc-300">No Custom Title Requests</h4>
+                      <p className="text-xs text-zinc-500 mt-1 max-w-md mx-auto">
+                        When users submit custom titles in the Cosmetic Shop for 1,000 BloxCoins, they will appear here for admin review!
+                      </p>
+                    </div>
+                  ) : (
+                    customTitleRequests.map((req) => {
+                      const isPending = req.status === 'pending';
+                      const isAccepted = req.status === 'accepted';
+                      const isDeclined = req.status === 'declined';
+                      const isProcessing = isProcessingTitleReq === req.id;
+
+                      return (
+                        <div
+                          key={req.id}
+                          className={`relative overflow-hidden rounded-2xl border p-4 sm:p-5 transition-all ${
+                            isPending
+                              ? 'border-amber-500/50 bg-amber-950/20 shadow-lg shadow-amber-950/20'
+                              : isAccepted
+                              ? 'border-emerald-500/30 bg-emerald-950/10'
+                              : 'border-zinc-800 bg-zinc-900/30'
+                          }`}
+                        >
+                          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                            <div className="space-y-2 min-w-0">
+                              {/* Header & Badges */}
+                              <div className="flex items-center gap-2.5 flex-wrap">
+                                <span className="font-extrabold text-white text-base truncate">
+                                  {req.userDisplayName || 'Unknown Player'}
+                                </span>
+                                <span className="text-xs text-zinc-500 font-mono">({req.userEmail || req.userId})</span>
+
+                                {isPending && (
+                                  <span className="rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                                    <Clock size={11} className="animate-pulse" /> Pending Review
+                                  </span>
+                                )}
+                                {isAccepted && (
+                                  <span className="rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                                    <CheckCircle2 size={11} /> Approved
+                                  </span>
+                                )}
+                                {isDeclined && (
+                                  <span className="rounded-full bg-red-500/20 text-red-300 border border-red-500/40 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                                    <XCircle size={11} /> Declined
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Requested Title Display & Live Preview */}
+                              <div className="flex flex-wrap items-center gap-3 pt-1">
+                                <div className="text-xs font-bold text-zinc-400">
+                                  Requested Title:
+                                </div>
+                                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 shadow-inner">
+                                  <span className="px-2 py-0.5 rounded text-xs bg-gradient-to-r from-amber-500/30 to-yellow-500/30 text-amber-300 border border-amber-400/60 font-black">
+                                    {req.requestedTitle.startsWith('[') ? req.requestedTitle : `[${req.requestedTitle}]`}
+                                  </span>
+                                  <span className="text-xs font-bold text-zinc-200">
+                                    {req.userDisplayName}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Rejection Reason if declined */}
+                              {isDeclined && req.rejectionReason && (
+                                <p className="text-xs text-red-300/80 bg-red-950/30 p-2.5 rounded-xl border border-red-500/20">
+                                  <strong>Declined Reason:</strong> {req.rejectionReason} (1,000 Coins refunded)
+                                </p>
+                              )}
+
+                              <div className="text-[11px] text-zinc-500">
+                                Submitted: {req.requestedAt?.toDate ? req.requestedAt.toDate().toLocaleString() : 'Recently'}
+                                {req.reviewedBy && ` • Reviewed by ${req.reviewedBy}`}
+                              </div>
+                            </div>
+
+                            {/* Actions for Pending Requests */}
+                            {isPending && (
+                              <div className="flex items-center gap-2 shrink-0 self-end lg:self-center pt-2 lg:pt-0">
+                                <button
+                                  onClick={() => handleAcceptCustomTitleRequest(req)}
+                                  disabled={isProcessing}
+                                  className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 px-4 py-2 text-xs font-extrabold text-white shadow-lg shadow-emerald-950/40 transition-all active:scale-95 disabled:opacity-50"
+                                >
+                                  <CheckCircle2 size={15} />
+                                  <span>{isProcessing ? 'Processing...' : 'Approve Title'}</span>
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    setDeclineModalReq(req);
+                                    setDeclineReason('Title violates community guidelines or contains inappropriate language.');
+                                  }}
+                                  disabled={isProcessing}
+                                  className="flex items-center gap-1.5 rounded-xl bg-red-600/80 hover:bg-red-500 px-4 py-2 text-xs font-bold text-white shadow-md transition-all active:scale-95 disabled:opacity-50"
+                                >
+                                  <XCircle size={15} />
+                                  <span>Decline & Refund</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </motion.div>
             )}
@@ -2743,6 +3017,92 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote }: Admin
                     >
                       <Hammer size={15} />
                       Confirm Ban 🔨
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Modal: Decline Custom Title Request */}
+        <AnimatePresence>
+          {declineModalReq && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setDeclineModalReq(null)}
+                className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+              />
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 15 }}
+                className="relative z-10 w-full max-w-md rounded-3xl border border-red-500/30 bg-zinc-950 p-6 shadow-2xl"
+              >
+                <div className="flex items-center justify-between border-b border-zinc-800 pb-4 mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-red-500/10 text-red-400 border border-red-500/20">
+                      <XCircle size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-white">Decline Title Request</h3>
+                      <p className="text-xs text-zinc-400">
+                        Player: <span className="text-amber-300 font-bold">{declineModalReq.userDisplayName}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setDeclineModalReq(null)}
+                    className="p-1 rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-900"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 text-xs">
+                    <span className="text-zinc-400">Requested Title:</span>{' '}
+                    <strong className="text-amber-300 underline font-mono text-sm">{declineModalReq.requestedTitle}</strong>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-zinc-300">
+                      Reason for Rejection (sent to user notification)
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={declineReason}
+                      onChange={(e) => setDeclineReason(e.target.value)}
+                      placeholder="e.g. Title contains profanity or impersonates staff..."
+                      className="w-full rounded-2xl bg-zinc-900 border border-zinc-800 p-3 text-xs text-white placeholder-zinc-600 focus:border-red-500 focus:outline-none transition-all resize-none"
+                    />
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 flex items-center gap-2">
+                    <Coins size={16} className="shrink-0" />
+                    <span>Declining will automatically refund <strong>1,000 BloxCoins</strong> back to {declineModalReq.userDisplayName}'s balance.</span>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setDeclineModalReq(null)}
+                      className="flex-1 rounded-2xl border border-zinc-800 bg-zinc-900 py-3 text-xs font-bold text-zinc-300 hover:bg-zinc-850 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeclineCustomTitleRequest}
+                      className="flex-1 rounded-2xl bg-red-600 hover:bg-red-500 text-white py-3 text-xs font-black shadow-lg shadow-red-950/50 transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                    >
+                      <XCircle size={15} />
+                      Confirm & Refund
                     </button>
                   </div>
                 </div>

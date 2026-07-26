@@ -1,27 +1,32 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Coins, Check, Sparkles, Palette, Image as ImageIcon, Type, Gift } from 'lucide-react';
+import { X, Coins, Check, Sparkles, Palette, Image as ImageIcon, Type, Gift, Award, Search, Send, Clock, CheckCircle, XCircle } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { 
   NAME_COLORS, 
   BACKGROUND_THEMES, 
   FONT_ITEMS,
+  TITLE_ITEMS,
   NameColorItem, 
   BackgroundThemeItem, 
   FontItem,
+  TitleItem,
   getNameColorStyle, 
   getBackgroundThemeStyle,
-  getFontItemStyle
+  getFontItemStyle,
+  getTitleItemStyle
 } from '../lib/shopData';
-import { UserProfileData } from '../types';
+import { UserProfileData, CustomTitleRequest } from '../types';
 
 interface ShopModalProps {
   isOpen: boolean;
   onClose: () => void;
   user: User | null;
   profileData: UserProfileData;
-  onBuyItem: (type: 'color' | 'theme' | 'font', item: NameColorItem | BackgroundThemeItem | FontItem) => Promise<boolean>;
-  onEquipItem: (type: 'color' | 'theme' | 'font', itemId: string) => Promise<void>;
+  onBuyItem: (type: 'color' | 'theme' | 'font' | 'title', item: NameColorItem | BackgroundThemeItem | FontItem | TitleItem) => Promise<boolean>;
+  onEquipItem: (type: 'color' | 'theme' | 'font' | 'title', itemId: string) => Promise<void>;
+  onRequestCustomTitle: (requestedTitle: string) => Promise<boolean>;
+  customTitleRequest?: CustomTitleRequest | null;
   onClaimDailyBonus: () => Promise<void>;
   previewThemeId?: string | null;
   onPreviewTheme?: (themeId: string | null) => void;
@@ -36,15 +41,25 @@ export default function ShopModal({
   profileData,
   onBuyItem,
   onEquipItem,
+  onRequestCustomTitle,
+  customTitleRequest,
   onClaimDailyBonus,
   previewThemeId,
   onPreviewTheme,
   previewFontId,
   onPreviewFont,
 }: ShopModalProps) {
-  const [activeTab, setActiveTab] = useState<'colors' | 'themes' | 'fonts' | 'earn'>('colors');
+  const [activeTab, setActiveTab] = useState<'titles' | 'colors' | 'themes' | 'fonts' | 'earn'>('titles');
   const [loadingItemId, setLoadingItemId] = useState<string | null>(null);
   const [isClaimingBonus, setIsClaimingBonus] = useState(false);
+
+  // Custom title request state
+  const [customTitleInput, setCustomTitleInput] = useState('');
+  const [isSubmittingCustom, setIsSubmittingCustom] = useState(false);
+
+  // Title search & category filter
+  const [titleSearch, setTitleSearch] = useState('');
+  const [titleCategory, setTitleCategory] = useState<string>('All');
 
   if (!isOpen) return null;
 
@@ -54,11 +69,12 @@ export default function ShopModal({
   const equippedColorStyle = getNameColorStyle(profileData.equippedColor);
   const equippedThemeStyle = getBackgroundThemeStyle(profileData.equippedTheme);
   const equippedFontStyle = getFontItemStyle(profileData.equippedFont);
+  const equippedTitleStyle = getTitleItemStyle(profileData.equippedTitle);
 
-  const purchasedFonts = profileData.purchasedFonts || ['default'];
-  const equippedFont = profileData.equippedFont || 'default';
+  const purchasedTitles = profileData.purchasedTitles || ['default'];
+  const equippedTitle = profileData.equippedTitle || 'default';
 
-  const handleBuy = async (type: 'color' | 'theme' | 'font', item: NameColorItem | BackgroundThemeItem | FontItem) => {
+  const handleBuy = async (type: 'color' | 'theme' | 'font' | 'title', item: NameColorItem | BackgroundThemeItem | FontItem | TitleItem) => {
     setLoadingItemId(item.id);
     try {
       await onBuyItem(type, item);
@@ -67,7 +83,7 @@ export default function ShopModal({
     }
   };
 
-  const handleEquip = async (type: 'color' | 'theme' | 'font', itemId: string) => {
+  const handleEquip = async (type: 'color' | 'theme' | 'font' | 'title', itemId: string) => {
     setLoadingItemId(itemId);
     try {
       await onEquipItem(type, itemId);
@@ -84,6 +100,29 @@ export default function ShopModal({
       setIsClaimingBonus(false);
     }
   };
+
+  const handleCustomTitleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customTitleInput.trim() || profileData.coins < 1000) return;
+    setIsSubmittingCustom(true);
+    try {
+      const success = await onRequestCustomTitle(customTitleInput.trim());
+      if (success) {
+        setCustomTitleInput('');
+      }
+    } finally {
+      setIsSubmittingCustom(false);
+    }
+  };
+
+  // Filtered titles
+  const filteredTitles = TITLE_ITEMS.filter((item) => {
+    const matchesCategory = titleCategory === 'All' || item.category === titleCategory;
+    const matchesSearch = item.name.toLowerCase().includes(titleSearch.toLowerCase()) || 
+                          item.title.toLowerCase().includes(titleSearch.toLowerCase()) ||
+                          item.description.toLowerCase().includes(titleSearch.toLowerCase());
+    return matchesCategory && matchesSearch;
+  });
 
   return (
     <AnimatePresence>
@@ -160,8 +199,21 @@ export default function ShopModal({
           <div className="bg-zinc-900/60 border-b border-zinc-800 p-4 px-6 flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-2 text-zinc-400 font-medium">
               <span>Equipped Look:</span>
-              <span className={`px-2.5 py-1 rounded-lg bg-zinc-950 border border-zinc-800 ${equippedColorStyle.className}`}>
-                {user?.displayName || 'Your Username'}
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-950 border border-zinc-800">
+                {equippedTitleStyle.title && (
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] ${equippedTitleStyle.tagClass}`}>
+                    {equippedTitleStyle.title}
+                  </span>
+                )}
+                <span className={equippedColorStyle.className}>
+                  {user?.displayName || 'Your Username'}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-zinc-400 font-medium">
+              <span>Title:</span>
+              <span className="px-2.5 py-1 rounded-lg bg-zinc-950 border border-zinc-800 text-amber-300 font-bold">
+                {equippedTitleStyle.title ? equippedTitleStyle.title : 'None'}
               </span>
             </div>
             <div className="flex items-center gap-2 text-zinc-400 font-medium">
@@ -183,6 +235,17 @@ export default function ShopModal({
 
           {/* Tabs */}
           <div className="flex border-b border-zinc-800 px-6 pt-2 bg-zinc-950/40 gap-2 overflow-x-auto scrollbar-none">
+            <button
+              onClick={() => setActiveTab('titles')}
+              className={`flex items-center gap-2 py-3 px-4 font-bold text-sm border-b-2 transition-all shrink-0 ${
+                activeTab === 'titles'
+                  ? 'border-amber-500 text-amber-400'
+                  : 'border-transparent text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <Award size={16} />
+              Titles ({TITLE_ITEMS.length - 1})
+            </button>
             <button
               onClick={() => setActiveTab('colors')}
               className={`flex items-center gap-2 py-3 px-4 font-bold text-sm border-b-2 transition-all shrink-0 ${
@@ -231,6 +294,264 @@ export default function ShopModal({
 
           {/* Tab Content */}
           <div className="p-5 sm:p-6 max-h-[60vh] overflow-y-auto">
+            {/* TITLES TAB */}
+            {activeTab === 'titles' && (
+              <div className="space-y-6">
+                {/* Custom Title Request Banner (1,000 Coins) */}
+                <div className="relative overflow-hidden rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-950/40 via-purple-950/30 to-zinc-950 p-5 shadow-xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                    <div>
+                      <div className="flex items-center gap-2 text-amber-400 text-xs font-black uppercase tracking-wider mb-1">
+                        <Sparkles size={16} className="animate-spin text-amber-400" />
+                        <span>Exclusive Custom Service</span>
+                      </div>
+                      <h3 className="text-xl font-black text-white flex items-center gap-2">
+                        Create Custom Title
+                      </h3>
+                      <p className="text-xs text-zinc-400 mt-1 max-w-xl">
+                        Design your own custom title! For <strong className="text-amber-300">1,000 BloxCoins</strong>, submit your custom prefix. It will be sent to Admins to be accepted or declined.
+                      </p>
+                    </div>
+
+                    <div className="shrink-0 flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 px-3.5 py-2 rounded-xl">
+                      <Coins className="text-amber-400" size={20} />
+                      <span className="font-black text-amber-300 text-base">1,000 Coins</span>
+                    </div>
+                  </div>
+
+                  {/* Pending / Previous Status Banner */}
+                  {customTitleRequest ? (
+                    <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-medium ${
+                      customTitleRequest.status === 'pending'
+                        ? 'bg-amber-950/40 border-amber-500/50 text-amber-200'
+                        : customTitleRequest.status === 'accepted'
+                        ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-200'
+                        : 'bg-red-950/40 border-red-500/50 text-red-200'
+                    }`}>
+                      <div className="flex items-center gap-3">
+                        {customTitleRequest.status === 'pending' && <Clock size={20} className="text-amber-400 shrink-0 animate-pulse" />}
+                        {customTitleRequest.status === 'accepted' && <CheckCircle size={20} className="text-emerald-400 shrink-0" />}
+                        {customTitleRequest.status === 'declined' && <XCircle size={20} className="text-red-400 shrink-0" />}
+                        <div>
+                          <div className="font-bold text-sm">
+                            {customTitleRequest.status === 'pending' && 'Custom Title Pending Admin Review'}
+                            {customTitleRequest.status === 'accepted' && 'Custom Title Accepted! 🎉'}
+                            {customTitleRequest.status === 'declined' && 'Custom Title Request Declined'}
+                          </div>
+                          <div className="text-xs opacity-90 mt-0.5">
+                            Title: <span className="font-extrabold underline">{customTitleRequest.requestedTitle}</span>
+                            {customTitleRequest.status === 'declined' && customTitleRequest.rejectionReason && (
+                              <span> • Reason: {customTitleRequest.rejectionReason} (1,000 Coins refunded!)</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {customTitleRequest.status === 'pending' && (
+                        <div className="px-3 py-1 rounded-lg bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30 text-[11px] shrink-0 self-start sm:self-auto">
+                          Awaiting Admin
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <form onSubmit={handleCustomTitleSubmit} className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="sm:col-span-2">
+                          <label className="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
+                            Requested Title (Max 30 chars)
+                          </label>
+                          <input
+                            type="text"
+                            maxLength={30}
+                            value={customTitleInput}
+                            onChange={(e) => setCustomTitleInput(e.target.value)}
+                            placeholder="e.g. Roblox Legend or [Tuff Boss]"
+                            className="w-full rounded-xl bg-zinc-900 border border-zinc-700 px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 focus:border-amber-500 focus:outline-none"
+                          />
+                        </div>
+
+                        {/* Live Preview */}
+                        <div>
+                          <label className="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
+                            Live Preview
+                          </label>
+                          <div className="flex h-[42px] items-center gap-1.5 rounded-xl bg-zinc-900 border border-zinc-800 px-3 text-xs">
+                            {customTitleInput.trim() ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] bg-gradient-to-r from-amber-500/30 to-yellow-500/30 text-amber-300 border border-amber-400/60 font-black shadow-sm">
+                                {customTitleInput.trim().startsWith('[') ? customTitleInput.trim() : `[${customTitleInput.trim()}]`}
+                              </span>
+                            ) : (
+                              <span className="text-zinc-600 italic text-[11px]">Type a title above...</span>
+                            )}
+                            <span className={equippedColorStyle.className}>
+                              {user?.displayName || 'YourName'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3 pt-1">
+                        <div className="text-[11px] text-zinc-400">
+                          {profileData.coins < 1000 ? (
+                            <span className="text-red-400 font-semibold">You need 1,000 BloxCoins to request a custom title.</span>
+                          ) : (
+                            <span className="text-emerald-400 font-semibold">You have enough coins! Instant submission to admins.</span>
+                          )}
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={!customTitleInput.trim() || profileData.coins < 1000 || !user || isSubmittingCustom}
+                          className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-extrabold transition-all active:scale-95 ${
+                            customTitleInput.trim() && profileData.coins >= 1000 && user && !isSubmittingCustom
+                              ? 'bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-500 hover:from-amber-400 hover:to-yellow-400 text-black shadow-lg shadow-amber-950/40'
+                              : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                          }`}
+                        >
+                          <Send size={14} />
+                          <span>{isSubmittingCustom ? 'Submitting...' : 'Submit Request (1,000 Coins)'}</span>
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+
+                {/* Pre-made Titles Title Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+                  <div>
+                    <h4 className="text-lg font-black text-white flex items-center gap-2">
+                      <Award className="text-amber-400" size={18} />
+                      Title Catalog ({filteredTitles.length})
+                    </h4>
+                    <p className="text-xs text-zinc-400">
+                      Choose from over 50+ pre-made titles or filter by category below.
+                    </p>
+                  </div>
+
+                  {/* Search Bar */}
+                  <div className="relative w-full sm:w-64">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                    <input
+                      type="text"
+                      value={titleSearch}
+                      onChange={(e) => setTitleSearch(e.target.value)}
+                      placeholder="Search 50+ titles..."
+                      className="w-full rounded-xl bg-zinc-900 border border-zinc-800 pl-8 pr-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:border-amber-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Category Pill Filters */}
+                <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                  {['All', 'Roblox', 'Gaming', 'Flex', 'Funny', 'Roleplay', 'Status', 'Popular'].map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setTitleCategory(cat)}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                        titleCategory === cat
+                          ? 'bg-amber-500 text-black shadow-md'
+                          : 'bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Titles Catalog Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
+                  {filteredTitles.map((item) => {
+                    const isOwned = purchasedTitles.includes(item.id);
+                    const isEquipped = equippedTitle === item.id;
+                    const canAfford = profileData.coins >= item.price;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={`relative overflow-hidden rounded-2xl border p-4 transition-all ${
+                          isEquipped
+                            ? 'border-emerald-500/80 bg-emerald-950/20 shadow-[0_0_20px_rgba(16,185,129,0.15)]'
+                            : isOwned
+                            ? 'border-zinc-700 bg-zinc-900/60 hover:border-zinc-600'
+                            : 'border-zinc-800 bg-zinc-900/30 hover:border-zinc-700'
+                        }`}
+                      >
+                        {item.badge && (
+                          <div className="absolute top-3 right-3 rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-black text-amber-300 border border-amber-500/30">
+                            {item.badge}
+                          </div>
+                        )}
+
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-950 border border-zinc-800 text-amber-400">
+                            <Award size={20} />
+                          </div>
+                          <div className="flex-1 pr-12">
+                            <h4 className="text-sm font-black text-white">{item.name}</h4>
+                            <p className="text-[11px] text-zinc-400 mt-0.5 leading-snug">{item.description}</p>
+                            
+                            {/* Title Tag Preview */}
+                            <div className="mt-3 flex items-center gap-2">
+                              {item.id === 'default' ? (
+                                <span className="text-[11px] text-zinc-500 italic">No Title Badge</span>
+                              ) : (
+                                <span className={`px-2 py-0.5 rounded text-xs ${item.tagClass}`}>
+                                  {item.title}
+                                </span>
+                              )}
+                              <span className={equippedColorStyle.className + ' text-xs'}>
+                                {user?.displayName || 'YourName'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Action Bar */}
+                        <div className="mt-4 flex items-center justify-between border-t border-zinc-800/80 pt-3">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
+                            {item.price === 0 ? (
+                              <span className="text-emerald-400">Free</span>
+                            ) : (
+                              <>
+                                <Coins size={14} />
+                                <span>{item.price} Coins</span>
+                              </>
+                            )}
+                          </div>
+
+                          {isEquipped ? (
+                            <span className="flex items-center gap-1 rounded-xl bg-emerald-500/20 px-3 py-1.5 text-xs font-bold text-emerald-400 border border-emerald-500/40">
+                              <Check size={14} /> Equipped
+                            </span>
+                          ) : isOwned ? (
+                            <button
+                              onClick={() => handleEquip('title', item.id)}
+                              disabled={loadingItemId === item.id}
+                              className="rounded-xl bg-blue-600/80 hover:bg-blue-500 px-4 py-1.5 text-xs font-bold text-white shadow-md transition-all active:scale-95"
+                            >
+                              {loadingItemId === item.id ? 'Equipping...' : 'Equip Title'}
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleBuy('title', item)}
+                              disabled={!canAfford || !user || loadingItemId === item.id}
+                              className={`rounded-xl px-4 py-1.5 text-xs font-bold transition-all active:scale-95 ${
+                                canAfford && user
+                                  ? 'bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black shadow-md'
+                                  : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                              }`}
+                            >
+                              {loadingItemId === item.id ? 'Buying...' : !user ? 'Sign in' : canAfford ? 'Buy Title' : 'Need Coins'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* NAME COLORS TAB */}
             {activeTab === 'colors' && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
@@ -444,8 +765,9 @@ export default function ShopModal({
             {activeTab === 'fonts' && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
                 {FONT_ITEMS.map((item) => {
-                  const isOwned = purchasedFonts.includes(item.id);
-                  const isEquipped = equippedFont === item.id;
+                  const fontList = profileData.purchasedFonts || ['default'];
+                  const isOwned = fontList.includes(item.id);
+                  const isEquipped = (profileData.equippedFont || 'default') === item.id;
                   const isPreviewing = previewFontId === item.id;
                   const canAfford = profileData.coins >= item.price;
 

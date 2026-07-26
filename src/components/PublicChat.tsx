@@ -15,7 +15,7 @@ import { User } from 'firebase/auth';
 import { MessageSquare, Send, Trash2, LogIn, Sparkles, Smile, ShieldCheck, User as UserIcon, ShieldAlert, Clock, Ban } from 'lucide-react';
 import { db, signIn } from '../firebase';
 import { PublicChatMessage, UserProfileData } from '../types';
-import { getNameColorStyle } from '../lib/shopData';
+import { getNameColorStyle, getTitleItemStyle } from '../lib/shopData';
 import { filterChatMessage, setCustomBannedWords } from '../lib/chatFilter';
 import { useToast } from './Toast';
 
@@ -110,6 +110,7 @@ export default function PublicChat({ user, profileData, isAdmin, onOpenDM }: Pub
           senderPhotoURL: data.senderPhotoURL,
           senderColor: data.senderColor || 'default',
           senderTheme: data.senderTheme || 'default',
+          senderTitle: data.senderTitle || 'default',
           text: data.text || '',
           timestamp: data.timestamp,
         });
@@ -195,6 +196,7 @@ export default function PublicChat({ user, profileData, isAdmin, onOpenDM }: Pub
         senderPhotoURL: user.photoURL || null,
         senderColor: profileData.equippedColor || 'default',
         senderTheme: profileData.equippedTheme || 'default',
+        senderTitle: profileData.equippedTitle || 'default',
         text: cleanText,
         timestamp: serverTimestamp(),
       });
@@ -262,6 +264,7 @@ export default function PublicChat({ user, profileData, isAdmin, onOpenDM }: Pub
           messages.map((msg) => {
             const isMe = user?.uid === msg.senderUid;
             const colorStyle = getNameColorStyle(msg.senderColor);
+            const titleStyle = getTitleItemStyle(msg.senderTitle || 'default');
             const dateObj = msg.timestamp?.toDate ? msg.timestamp.toDate() : null;
             const formattedTime = dateObj
               ? dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -291,7 +294,12 @@ export default function PublicChat({ user, profileData, isAdmin, onOpenDM }: Pub
 
                 {/* Message Bubble */}
                 <div className={`flex flex-col min-w-0 ${isMe ? 'items-end' : 'items-start'}`}>
-                  <div className="flex items-center gap-2 mb-1 px-1">
+                  <div className="flex items-center gap-1.5 mb-1 px-1 flex-wrap">
+                    {titleStyle.title && (
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-black tracking-tight ${titleStyle.tagClass}`}>
+                        {titleStyle.title}
+                      </span>
+                    )}
                     <span className={`text-xs ${colorStyle.className}`}>
                       {msg.senderDisplayName}
                     </span>

@@ -16,12 +16,13 @@ import {
   increment,
   getDocFromServer,
   collectionGroup,
-  where
+  where,
+  limit
 } from "firebase/firestore";
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { Trophy, Plus, LogIn, LogOut, Gamepad2, Search, TrendingUp, AlertTriangle, BarChart3, CircleUser, Download, Shield, Star, Flame, Sparkles, FileText, Coins, ShoppingBag, MessageSquare, Bell } from 'lucide-react';
 import { db, auth, signIn, logout } from './firebase';
-import { Game, UserStreakData, GlobalAnnouncement, UserProfileData, AppNotification } from './types';
+import { Game, UserStreakData, GlobalAnnouncement, UserProfileData, AppNotification, CustomTitleRequest, AdminCustomTitle, AdminCustomFont, CustomThemeConfig } from './types';
 import GameCard from './components/GameCard';
 import AddGameModal from './components/AddGameModal';
 import TopGamesChart from './components/TopGamesChart';
@@ -34,7 +35,7 @@ import ShopModal from './components/ShopModal';
 import PublicChat from './components/PublicChat';
 import DirectMessagesModal from './components/DirectMessagesModal';
 import NotificationsModal from './components/NotificationsModal';
-import { getNameColorStyle, getBackgroundThemeStyle, getFontItemStyle, NameColorItem, BackgroundThemeItem, FontItem } from './lib/shopData';
+import { getNameColorStyle, getBackgroundThemeStyle, getFontItemStyle, getTitleItemStyle, NameColorItem, BackgroundThemeItem, FontItem, TitleItem } from './lib/shopData';
 import { useToast } from './components/Toast';
 import { logActivity } from './lib/activity';
 import { recordUserVotingStreak } from './lib/streak';
@@ -224,6 +225,9 @@ function App() {
           purchasedThemes: Array.isArray(data.purchasedThemes) ? data.purchasedThemes : ['default'],
           equippedFont: data.equippedFont || 'default',
           purchasedFonts: Array.isArray(data.purchasedFonts) ? data.purchasedFonts : ['default'],
+          equippedTitle: data.equippedTitle || 'default',
+          purchasedTitles: Array.isArray(data.purchasedTitles) ? data.purchasedTitles : ['default'],
+          customThemeConfig: data.customThemeConfig || undefined,
           displayName: data.displayName || user.displayName || '',
           photoURL: data.photoURL || user.photoURL || '',
           lastDailyBonusDate: data.lastDailyBonusDate || '',
@@ -237,6 +241,8 @@ function App() {
           purchasedThemes: ['default'],
           equippedFont: 'default',
           purchasedFonts: ['default'],
+          equippedTitle: 'default',
+          purchasedTitles: ['default'],
           displayName: user.displayName || '',
           photoURL: user.photoURL || '',
           email: user.email || ''
@@ -249,6 +255,68 @@ function App() {
 
     return () => unsubscribe();
   }, [user]);
+
+  // Realtime listener for user's custom title request
+  const [customTitleRequest, setCustomTitleRequest] = useState<CustomTitleRequest | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      setCustomTitleRequest(null);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'customTitleRequests'),
+      where('userId', '==', user.uid),
+      orderBy('requestedAt', 'desc'),
+      limit(1)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        const docSnap = snapshot.docs[0];
+        setCustomTitleRequest({
+          id: docSnap.id,
+          ...docSnap.data()
+        } as CustomTitleRequest);
+      } else {
+        setCustomTitleRequest(null);
+      }
+    }, (err) => {
+      console.warn("Custom title request listener warning:", err);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Realtime listener for custom admin titles and fonts
+  const [customAdminTitles, setCustomAdminTitles] = useState<AdminCustomTitle[]>([]);
+  const [customAdminFonts, setCustomAdminFonts] = useState<AdminCustomFont[]>([]);
+
+  useEffect(() => {
+    const qTitles = query(collection(db, 'customAdminTitles'), orderBy('createdAt', 'desc'));
+    const unsubTitles = onSnapshot(qTitles, (snapshot) => {
+      const list: AdminCustomTitle[] = snapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      } as AdminCustomTitle));
+      setCustomAdminTitles(list);
+    }, err => console.warn("Custom admin titles listener warning:", err));
+
+    const qFonts = query(collection(db, 'customAdminFonts'), orderBy('createdAt', 'desc'));
+    const unsubFonts = onSnapshot(qFonts, (snapshot) => {
+      const list: AdminCustomFont[] = snapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      } as AdminCustomFont));
+      setCustomAdminFonts(list);
+    }, err => console.warn("Custom admin fonts listener warning:", err));
+
+    return () => {
+      unsubTitles();
+      unsubFonts();
+    };
+  }, []);
 
   // Realtime listener for global announcement
   useEffect(() => {
@@ -845,7 +913,7 @@ function App() {
   };
 
   // Shop Handlers
-  const handleBuyItem = async (type: 'color' | 'theme' | 'font', item: NameColorItem | BackgroundThemeItem | FontItem): Promise<boolean> => {
+  const handleBuyItem = async (type: 'color' | 'theme' | 'font' | 'title', item: NameColorItem | BackgroundThemeItem | FontItem | TitleItem): Promise<boolean> => {
     if (!user) {
       signIn();
       return false;
@@ -874,7 +942,7 @@ function App() {
           equippedTheme: item.id,
         }, { merge: true });
         toast(`Purchased & equipped ${item.name} theme! 🌌`, 'success');
-      } else {
+      } else if (type === 'font') {
         const currentFonts = userProfileData.purchasedFonts || ['default'];
         const updatedFonts = Array.from(new Set([...currentFonts, item.id]));
         await setDoc(userRef, {
@@ -883,6 +951,15 @@ function App() {
           equippedFont: item.id,
         }, { merge: true });
         toast(`Purchased & equipped ${item.name} font! 🔤`, 'success');
+      } else if (type === 'title') {
+        const currentTitles = userProfileData.purchasedTitles || ['default'];
+        const updatedTitles = Array.from(new Set([...currentTitles, item.id]));
+        await setDoc(userRef, {
+          coins: increment(-item.price),
+          purchasedTitles: updatedTitles,
+          equippedTitle: item.id,
+        }, { merge: true });
+        toast(`Purchased & equipped "${item.name}" title! 👑`, 'success');
       }
       return true;
     } catch (err: any) {
@@ -892,7 +969,7 @@ function App() {
     }
   };
 
-  const handleEquipItem = async (type: 'color' | 'theme' | 'font', itemId: string) => {
+  const handleEquipItem = async (type: 'color' | 'theme' | 'font' | 'title', itemId: string) => {
     if (!user) return;
     try {
       const userRef = doc(db, 'users', user.uid);
@@ -904,14 +981,104 @@ function App() {
         await setDoc(userRef, { equippedTheme: itemId }, { merge: true });
         const themeItem = getBackgroundThemeStyle(itemId);
         toast(`Equipped ${themeItem.name} background! 🌌`, 'success');
-      } else {
+      } else if (type === 'font') {
         await setDoc(userRef, { equippedFont: itemId }, { merge: true });
         const fontItem = getFontItemStyle(itemId);
         toast(`Equipped ${fontItem.name} font! 🔤`, 'success');
+      } else if (type === 'title') {
+        await setDoc(userRef, { equippedTitle: itemId }, { merge: true });
+        const titleItem = getTitleItemStyle(itemId);
+        toast(`Equipped "${titleItem.title || 'No Title'}" title! 👑`, 'success');
       }
     } catch (err) {
       console.error('Failed to equip item:', err);
       toast('Failed to equip item.', 'error');
+    }
+  };
+
+  const handleRequestCustomTitle = async (requestedTitle: string): Promise<boolean> => {
+    if (!user) {
+      signIn();
+      return false;
+    }
+
+    if (userProfileData.coins < 1000) {
+      toast('Not enough BloxCoins! You need 1,000 coins to request a custom title.', 'error');
+      return false;
+    }
+
+    try {
+      // Deduct 1,000 coins
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        coins: increment(-1000)
+      });
+
+      // Submit custom title request
+      await addDoc(collection(db, 'customTitleRequests'), {
+        userId: user.uid,
+        userDisplayName: user.displayName || 'Player',
+        userEmail: user.email || '',
+        requestedTitle: requestedTitle.trim(),
+        status: 'pending',
+        requestedAt: serverTimestamp()
+      });
+
+      await logActivity(
+        'custom_title_request',
+        'Requested Custom Title',
+        `${user.displayName || 'Player'} submitted custom title request "${requestedTitle.trim()}" for 1,000 coins.`
+      );
+
+      toast('Submitted custom title request for 1,000 BloxCoins! Admins will review it soon. 👑', 'success');
+      return true;
+    } catch (err: any) {
+      console.error('Failed to request custom title:', err);
+      toast('Failed to submit request. Please try again.', 'error');
+      return false;
+    }
+  };
+
+  const handleSaveCustomTheme = async (config: CustomThemeConfig): Promise<boolean> => {
+    if (!user) {
+      signIn();
+      return false;
+    }
+
+    const purchasedThemes = userProfileData.purchasedThemes || ['default'];
+    const isAlreadyOwned = purchasedThemes.includes('custom_discord');
+
+    if (!isAlreadyOwned && userProfileData.coins < 1000) {
+      toast('Not enough BloxCoins! You need 1,000 coins to create a Custom Discord Theme.', 'error');
+      return false;
+    }
+
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const updatedThemes = Array.from(new Set([...purchasedThemes, 'custom_discord']));
+
+      await setDoc(userRef, {
+        coins: isAlreadyOwned ? userProfileData.coins : increment(-1000),
+        purchasedThemes: updatedThemes,
+        equippedTheme: 'custom_discord',
+        customThemeConfig: config,
+      }, { merge: true });
+
+      if (!isAlreadyOwned) {
+        toast('Purchased & applied Custom Discord Theme for 1,000 BloxCoins! 🎨', 'success');
+        await logActivity(
+          'shop_buy',
+          'Created Custom Discord Theme',
+          `${user.displayName || 'Player'} unlocked a Custom Discord Theme for 1,000 coins.`
+        );
+      } else {
+        toast('Updated & equipped Custom Discord Theme! 🎨', 'success');
+      }
+      return true;
+    } catch (err: any) {
+      console.error('Failed to save custom theme:', err);
+      toast('Failed to save theme. Please try again.', 'error');
+      return false;
     }
   };
 
@@ -1052,10 +1219,10 @@ function App() {
   );
 
   const activeThemeId = previewThemeId || userProfileData.equippedTheme;
-  const backgroundThemeStyle = getBackgroundThemeStyle(activeThemeId);
+  const backgroundThemeStyle = getBackgroundThemeStyle(activeThemeId, userProfileData.customThemeConfig);
 
   const activeFontId = previewFontId || userProfileData.equippedFont;
-  const fontStyle = getFontItemStyle(activeFontId);
+  const fontStyle = getFontItemStyle(activeFontId, customAdminFonts);
 
   const unreadNotificationCount = notifications.filter(n => !n.isRead).length;
 
@@ -1483,6 +1650,11 @@ function App() {
         onBuyItem={handleBuyItem}
         onEquipItem={handleEquipItem}
         onClaimDailyBonus={handleClaimDailyBonus}
+        onRequestCustomTitle={handleRequestCustomTitle}
+        customTitleRequest={customTitleRequest}
+        onSaveCustomTheme={handleSaveCustomTheme}
+        customAdminTitles={customAdminTitles}
+        customAdminFonts={customAdminFonts}
         previewThemeId={previewThemeId}
         onPreviewTheme={setPreviewThemeId}
         previewFontId={previewFontId}
@@ -1494,6 +1666,8 @@ function App() {
         onClose={() => setIsAdminDashboardOpen(false)}
         games={games}
         onVote={handleVote}
+        customAdminTitles={customAdminTitles}
+        customAdminFonts={customAdminFonts}
       />
 
       <UpdateLogsModal

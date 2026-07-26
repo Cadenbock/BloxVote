@@ -22,7 +22,7 @@ export interface Vote {
 
 export interface Activity {
   id: string;
-  type: 'vote' | 'unvote' | 'add_game' | 'delete_game' | 'feature_game' | 'unfeature_game' | 'admin_add' | 'admin_remove' | 'admin_grant_coins' | 'chat_flagged';
+  type: 'vote' | 'unvote' | 'add_game' | 'delete_game' | 'feature_game' | 'unfeature_game' | 'admin_add' | 'admin_remove' | 'admin_grant_coins' | 'chat_flagged' | 'custom_title_request' | 'approve_custom_title' | 'decline_custom_title';
   title: string;
   description: string;
   userDisplayName?: string;
@@ -55,6 +55,39 @@ export interface AdminUser {
   role?: string;
 }
 
+export interface CustomThemeConfig {
+  name: string;
+  bgGradient: string;
+  cardBorderClass: string;
+  backgroundClass: string;
+  accentColor: string;
+  pattern?: string;
+}
+
+export interface AdminCustomTitle {
+  id: string;
+  title: string;
+  name: string;
+  price: number;
+  category: string;
+  tagClass: string;
+  description: string;
+  createdAt?: any;
+  createdBy?: string;
+}
+
+export interface AdminCustomFont {
+  id: string;
+  name: string;
+  fontFamily: string;
+  price: number;
+  sampleText: string;
+  category: string;
+  description: string;
+  createdAt?: any;
+  createdBy?: string;
+}
+
 export interface UserProfileData {
   coins: number;
   equippedColor: string;
@@ -63,9 +96,26 @@ export interface UserProfileData {
   purchasedThemes: string[];
   equippedFont?: string;
   purchasedFonts?: string[];
+  equippedTitle?: string;
+  purchasedTitles?: string[];
+  customThemeConfig?: CustomThemeConfig;
   displayName?: string;
   photoURL?: string;
   lastDailyBonusDate?: string;
+}
+
+export interface CustomTitleRequest {
+  id: string;
+  userId: string;
+  userDisplayName: string;
+  userEmail?: string;
+  userPhotoURL?: string;
+  requestedTitle: string;
+  status: 'pending' | 'accepted' | 'declined';
+  requestedAt: any;
+  reviewedAt?: any;
+  reviewedBy?: string;
+  rejectionReason?: string;
 }
 
 export interface PublicChatMessage {
@@ -75,6 +125,7 @@ export interface PublicChatMessage {
   senderPhotoURL?: string;
   senderColor?: string;
   senderTheme?: string;
+  senderTitle?: string;
   text: string;
   timestamp: any;
 }
@@ -122,6 +173,7 @@ export interface DirectMessage {
   senderDisplayName: string;
   senderPhotoURL?: string;
   senderColor?: string;
+  senderTitle?: string;
   recipientUid: string;
   recipientDisplayName: string;
   originalText: string;
@@ -137,6 +189,7 @@ export interface ConversationParticipant {
   displayName: string;
   photoURL?: string;
   equippedColor?: string;
+  equippedTitle?: string;
 }
 
 export interface Conversation {
