@@ -11,6 +11,7 @@ import {
   getDoc,
   setDoc,
   deleteDoc,
+  writeBatch,
   serverTimestamp,
   increment,
   getDocFromServer,
@@ -384,7 +385,7 @@ function App() {
     const notifRef = collection(db, 'users', user.uid, 'notifications');
     const q = query(notifRef, orderBy('timestamp', 'desc'));
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
       const remoteNotifs: AppNotification[] = [];
       snapshot.forEach((docSnap) => {
         const data = docSnap.data();
@@ -402,42 +403,52 @@ function App() {
       });
 
       if (remoteNotifs.length === 0) {
-        const initialNotifs: AppNotification[] = [
-          {
-            id: 'init-1',
-            type: 'system',
-            title: 'Welcome to BloxVote 2026! 🚀',
-            message: 'You are signed in as ' + (user.displayName || 'Gamer') + '. Vote daily to build your streak and earn coins.',
-            timestamp: new Date(),
-            isRead: false,
-            linkAction: 'open_leaderboard',
-          },
-          {
-            id: 'init-2',
-            type: 'reward',
-            title: 'Daily Bonus Available 🎁',
-            message: 'Claim 50 free BloxCoins today in the shop!',
-            timestamp: new Date(),
-            isRead: false,
-            linkAction: 'open_shop',
-          }
-        ];
-        setNotifications(initialNotifs);
+        try {
+          const userSnap = await getDoc(doc(db, 'users', user.uid));
+          const isSeeded = userSnap.exists() && userSnap.data()?.notificationsSeeded;
 
-        initialNotifs.forEach(async (n) => {
-          try {
-            await setDoc(doc(db, 'users', user.uid, 'notifications', n.id), {
-              type: n.type,
-              title: n.title,
-              message: n.message,
-              timestamp: serverTimestamp(),
-              isRead: n.isRead,
-              linkAction: n.linkAction,
-            }, { merge: true });
-          } catch (e) {
-            console.warn("Error seeding notification:", e);
+          if (!isSeeded) {
+            await setDoc(doc(db, 'users', user.uid), { notificationsSeeded: true }, { merge: true });
+
+            const initialNotifs: AppNotification[] = [
+              {
+                id: 'init-1',
+                type: 'system',
+                title: 'Welcome to BloxVote 2026! 🚀',
+                message: 'You are signed in as ' + (user.displayName || 'Gamer') + '. Vote daily to build your streak and earn coins.',
+                timestamp: new Date(),
+                isRead: false,
+                linkAction: 'open_leaderboard',
+              },
+              {
+                id: 'init-2',
+                type: 'reward',
+                title: 'Daily Bonus Available 🎁',
+                message: 'Claim 50 free BloxCoins today in the shop!',
+                timestamp: new Date(),
+                isRead: false,
+                linkAction: 'open_shop',
+              }
+            ];
+            setNotifications(initialNotifs);
+
+            for (const n of initialNotifs) {
+              await setDoc(doc(db, 'users', user.uid, 'notifications', n.id), {
+                type: n.type,
+                title: n.title,
+                message: n.message,
+                timestamp: serverTimestamp(),
+                isRead: n.isRead,
+                linkAction: n.linkAction,
+              }, { merge: true });
+            }
+          } else {
+            setNotifications([]);
           }
-        });
+        } catch (e) {
+          console.warn("Error checking notification seed status:", e);
+          setNotifications([]);
+        }
       } else {
         setNotifications(remoteNotifs);
       }
@@ -539,14 +550,28 @@ function App() {
   const handleClearAllNotifications = async () => {
     const toDelete = [...notifications];
     setNotifications([]);
+    
     if (user) {
-      toDelete.forEach(async (n) => {
+      try {
+        await setDoc(doc(db, 'users', user.uid), { notificationsSeeded: true }, { merge: true });
+      } catch (err) {
+        console.warn("Failed to mark notificationsSeeded:", err);
+      }
+
+      if (toDelete.length > 0) {
         try {
-          await deleteDoc(doc(db, 'users', user.uid, 'notifications', n.id));
+          const batch = writeBatch(db);
+          toDelete.forEach((n) => {
+            batch.delete(doc(db, 'users', user.uid, 'notifications', n.id));
+          });
+          await batch.commit();
         } catch (err) {
-          console.warn("Failed to clear notification:", err);
+          console.warn("Failed to batch delete notifications:", err);
+          await Promise.all(
+            toDelete.map((n) => deleteDoc(doc(db, 'users', user.uid, 'notifications', n.id)).catch(() => {}))
+          );
         }
-      });
+      }
     }
     toast("Notification box cleared! ✨", "info");
   };
