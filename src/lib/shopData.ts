@@ -1,4 +1,5 @@
 import React from 'react';
+import { CustomColorConfig, CustomFontConfig } from '../types';
 
 export interface NameColorItem {
   id: string;
@@ -290,7 +291,53 @@ export const FONT_ITEMS: FontItem[] = [
   },
 ];
 
-export function getNameColorStyle(colorId?: string): NameColorItem {
+export function getNameColorStyle(colorId?: string, customConfig?: CustomColorConfig): NameColorItem {
+  if (colorId === 'custom_color' || colorId?.startsWith('custom_')) {
+    if (customConfig) {
+      const c1 = customConfig.color1 || '#38bdf8';
+      const c2 = customConfig.color2 || '#a855f7';
+      const c3 = customConfig.color3 || '#f43f5e';
+      const glow = customConfig.glowColor || '#38bdf8';
+      const intensity = customConfig.glowIntensity || 'medium';
+
+      let shadowBlur = 0;
+      if (intensity === 'soft') shadowBlur = 6;
+      if (intensity === 'medium') shadowBlur = 10;
+      if (intensity === 'high') shadowBlur = 18;
+
+      let style: React.CSSProperties = {};
+      if (customConfig.type === 'solid') {
+        style = {
+          color: c1,
+          textShadow: shadowBlur > 0 ? `0 0 ${shadowBlur}px ${glow}` : 'none',
+        };
+      } else if (customConfig.type === 'linear') {
+        style = {
+          backgroundImage: `linear-gradient(135deg, ${c1}, ${c2})`,
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          filter: shadowBlur > 0 ? `drop-shadow(0 0 ${shadowBlur}px ${glow})` : 'none',
+        };
+      } else {
+        style = {
+          backgroundImage: `linear-gradient(to right, ${c1}, ${c2}, ${c3})`,
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          filter: shadowBlur > 0 ? `drop-shadow(0 0 ${shadowBlur}px ${glow})` : 'none',
+        };
+      }
+
+      return {
+        id: 'custom_color',
+        name: customConfig.name || 'Custom Color Studio',
+        price: 1000,
+        description: 'Your personalized custom name color aura!',
+        badge: 'Custom 🎨',
+        className: 'font-extrabold',
+        style,
+      };
+    }
+  }
   return NAME_COLORS.find(c => c.id === colorId) || NAME_COLORS[0];
 }
 
@@ -317,8 +364,23 @@ export function getBackgroundThemeStyle(themeId?: string, customConfig?: any): B
   return BACKGROUND_THEMES.find(t => t.id === themeId) || BACKGROUND_THEMES[0];
 }
 
-export function getFontItemStyle(fontId?: string, customFonts: FontItem[] = []): FontItem {
+export function getFontItemStyle(fontId?: string, customFonts: FontItem[] = [], customFontConfig?: CustomFontConfig): FontItem {
   if (!fontId || fontId === 'default') return FONT_ITEMS[0];
+  if (fontId === 'custom_font' || fontId?.startsWith('custom_')) {
+    if (customFontConfig) {
+      const familyName = customFontConfig.fontFamily || 'sans-serif';
+      return {
+        id: 'custom_font',
+        name: customFontConfig.name || 'Custom Uploaded Font',
+        fontFamily: familyName.includes(',') || familyName.includes("'") ? familyName : `'${familyName}', sans-serif`,
+        price: 1000,
+        sampleText: customFontConfig.sampleText || 'ROBLOX VOTER 2026',
+        category: 'Custom',
+        description: 'Your personalized custom loaded font.',
+        badge: 'Custom Font 🔤',
+      };
+    }
+  }
   const allFonts = [...FONT_ITEMS, ...customFonts];
   return allFonts.find(f => f.id === fontId) || FONT_ITEMS[0];
 }

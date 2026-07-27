@@ -182,10 +182,10 @@ export default function UserProfile({
                 <div className="flex items-center gap-2 text-xs">
                   <span className="text-zinc-400 text-[11px]">Equipped Font:</span>
                   <span 
-                    style={{ fontFamily: getFontItemStyle(profileData?.equippedFont).fontFamily }}
+                    style={{ fontFamily: getFontItemStyle(profileData?.equippedFont, [], profileData?.customFontConfig).fontFamily }}
                     className="px-2.5 py-1 rounded-lg bg-zinc-950 border border-zinc-800 text-amber-300 font-semibold"
                   >
-                    {getFontItemStyle(profileData?.equippedFont).name}
+                    {getFontItemStyle(profileData?.equippedFont, [], profileData?.customFontConfig).name}
                   </span>
                 </div>
 

@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react';
+
 export interface Game {
   id: string;
   name: string;
@@ -88,6 +90,27 @@ export interface AdminCustomFont {
   createdBy?: string;
 }
 
+export interface CustomColorConfig {
+  name: string;
+  type: 'solid' | 'linear' | 'radial';
+  color1: string;
+  color2?: string;
+  color3?: string;
+  glowColor?: string;
+  glowIntensity?: 'none' | 'soft' | 'medium' | 'high';
+  style?: CSSProperties;
+  className?: string;
+}
+
+export interface CustomFontConfig {
+  name: string;
+  fontFamily: string;
+  fontUrl?: string;
+  fontDataUrl?: string;
+  fontFileName?: string;
+  sampleText?: string;
+}
+
 export interface UserProfileData {
   coins: number;
   equippedColor: string;
@@ -99,6 +122,8 @@ export interface UserProfileData {
   equippedTitle?: string;
   purchasedTitles?: string[];
   customThemeConfig?: CustomThemeConfig;
+  customColorConfig?: CustomColorConfig;
+  customFontConfig?: CustomFontConfig;
   displayName?: string;
   photoURL?: string;
   lastDailyBonusDate?: string;
@@ -125,8 +150,11 @@ export interface PublicChatMessage {
   senderDisplayName: string;
   senderPhotoURL?: string;
   senderColor?: string;
+  senderColorConfig?: CustomColorConfig;
   senderTheme?: string;
   senderTitle?: string;
+  senderFont?: string;
+  senderFontConfig?: CustomFontConfig;
   text: string;
   timestamp: any;
 }

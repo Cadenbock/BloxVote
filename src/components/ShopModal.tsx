@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Coins, Check, Sparkles, Palette, Image as ImageIcon, Type, Gift, Award, Search, Send, Clock, CheckCircle, XCircle, Sliders, Shield } from 'lucide-react';
+import { X, Coins, Check, Sparkles, Palette, Image as ImageIcon, Type, Gift, Award, Search, Send, Clock, CheckCircle, XCircle, Sliders, Shield, Upload, FileUp, FileText, Trash2 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { 
   NAME_COLORS, 
@@ -16,7 +16,7 @@ import {
   getFontItemStyle,
   getTitleItemStyle
 } from '../lib/shopData';
-import { UserProfileData, CustomTitleRequest, AdminCustomTitle, AdminCustomFont, CustomThemeConfig } from '../types';
+import { UserProfileData, CustomTitleRequest, AdminCustomTitle, AdminCustomFont, CustomThemeConfig, CustomColorConfig, CustomFontConfig } from '../types';
 
 interface ShopModalProps {
   isOpen: boolean;
@@ -29,6 +29,8 @@ interface ShopModalProps {
   customTitleRequest?: CustomTitleRequest | null;
   onClaimDailyBonus: () => Promise<void>;
   onSaveCustomTheme?: (config: CustomThemeConfig) => Promise<boolean>;
+  onSaveCustomColor?: (config: CustomColorConfig) => Promise<boolean>;
+  onSaveCustomFont?: (config: CustomFontConfig) => Promise<boolean>;
   customAdminTitles?: AdminCustomTitle[];
   customAdminFonts?: AdminCustomFont[];
   previewThemeId?: string | null;
@@ -66,6 +68,8 @@ export default function ShopModal({
   customTitleRequest,
   onClaimDailyBonus,
   onSaveCustomTheme,
+  onSaveCustomColor,
+  onSaveCustomFont,
   customAdminTitles = [],
   customAdminFonts = [],
   previewThemeId,
@@ -90,6 +94,105 @@ export default function ShopModal({
   const [accentColor, setAccentColor] = useState('#6366f1');
   const [glowIntensity, setGlowIntensity] = useState<'soft' | 'medium' | 'high'>('medium');
   const [isSavingCustomTheme, setIsSavingCustomTheme] = useState(false);
+
+  // Custom Name Color Studio State
+  const [customColorName, setCustomColorName] = useState('My Custom Aura');
+  const [customColorType, setCustomColorType] = useState<'solid' | 'linear' | 'radial'>('linear');
+  const [customColor1, setCustomColor1] = useState('#38bdf8');
+  const [customColor2, setCustomColor2] = useState('#a855f7');
+  const [customColor3, setCustomColor3] = useState('#f43f5e');
+  const [customGlowColor, setCustomGlowColor] = useState('#38bdf8');
+  const [customGlowIntensity, setCustomGlowIntensity] = useState<'none' | 'soft' | 'medium' | 'high'>('medium');
+  const [isSavingCustomColor, setIsSavingCustomColor] = useState(false);
+
+  // Custom Font Studio State
+  const [customFontName, setCustomFontName] = useState('Press Start 2P Font');
+  const [customFontFamily, setCustomFontFamily] = useState('Press Start 2P');
+  const [customFontUrl, setCustomFontUrl] = useState('');
+  const [customFontDataUrl, setCustomFontDataUrl] = useState<string>('');
+  const [customFontFileName, setCustomFontFileName] = useState<string>('');
+  const [uploadedFontError, setUploadedFontError] = useState<string>('');
+  const [customFontSample, setCustomFontSample] = useState('ROBLOX VOTER 2026 • LEADERBOARD #1');
+  const [isSavingCustomFont, setIsSavingCustomFont] = useState(false);
+
+  // Sync state if user already owns custom font config
+  useEffect(() => {
+    if (profileData.customFontConfig) {
+      if (profileData.customFontConfig.name) setCustomFontName(profileData.customFontConfig.name);
+      if (profileData.customFontConfig.fontFamily) setCustomFontFamily(profileData.customFontConfig.fontFamily);
+      if (profileData.customFontConfig.fontUrl) setCustomFontUrl(profileData.customFontConfig.fontUrl);
+      if (profileData.customFontConfig.fontDataUrl) setCustomFontDataUrl(profileData.customFontConfig.fontDataUrl);
+      if (profileData.customFontConfig.fontFileName) setCustomFontFileName(profileData.customFontConfig.fontFileName);
+      if (profileData.customFontConfig.sampleText) setCustomFontSample(profileData.customFontConfig.sampleText);
+    }
+  }, [profileData.customFontConfig]);
+
+  // Load custom font in head for preview (handles Google fonts & base64 font files)
+  useEffect(() => {
+    if (customFontFamily) {
+      const styleId = `shop-font-preview-style`;
+      let styleEl = document.getElementById(styleId) as HTMLStyleElement | null;
+      if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = styleId;
+        document.head.appendChild(styleEl);
+      }
+
+      if (customFontDataUrl) {
+        styleEl.textContent = `
+          @font-face {
+            font-family: '${customFontFamily}';
+            src: url('${customFontDataUrl}');
+            font-weight: normal;
+            font-style: normal;
+            font-display: swap;
+          }
+        `;
+      } else {
+        styleEl.textContent = '';
+        const fontId = `shop-font-preview-${customFontFamily.replace(/\s+/g, '-').toLowerCase()}`;
+        if (!document.getElementById(fontId)) {
+          const link = document.createElement('link');
+          link.id = fontId;
+          link.rel = 'stylesheet';
+          link.href = customFontUrl || `https://fonts.googleapis.com/css2?family=${encodeURIComponent(customFontFamily)}:ital,wght@0,400;0,700;0,900;1,400;1,700&display=swap`;
+          document.head.appendChild(link);
+        }
+      }
+    }
+  }, [customFontFamily, customFontUrl, customFontDataUrl]);
+
+  const handleFontFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2.5 * 1024 * 1024) {
+      setUploadedFontError('Font file is too large! Please choose a font under 2.5MB.');
+      return;
+    }
+
+    setUploadedFontError('');
+    const rawName = file.name.replace(/\.[^/.]+$/, "");
+    const cleanFamilyName = rawName.replace(/[^a-zA-Z0-9\s_-]/g, "").trim() || 'CustomFont';
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result as string;
+      if (result) {
+        setCustomFontDataUrl(result);
+        setCustomFontFileName(file.name);
+        setCustomFontFamily(cleanFamilyName);
+        setCustomFontName(`${cleanFamilyName} (Uploaded)`);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleClearUploadedFont = () => {
+    setCustomFontDataUrl('');
+    setCustomFontFileName('');
+    setUploadedFontError('');
+  };
 
   // Compute live gradient string
   const computedBgGradient = useMemo(() => {
@@ -162,6 +265,7 @@ export default function ShopModal({
   const [titleCategory, setTitleCategory] = useState<string>('All');
 
   // Combine default titles + Admin custom titles + User custom titles
+  // CUSTOM TITLES PLACED AT THE VERY TOP OF THE LIST!
   const allTitlesCatalog = useMemo(() => {
     const adminMapped: TitleItem[] = (customAdminTitles || []).map(at => ({
       id: at.id,
@@ -194,10 +298,10 @@ export default function ShopModal({
         };
       });
 
-    return [...TITLE_ITEMS, ...adminMapped, ...userCustomMapped];
+    return [...userCustomMapped, ...adminMapped, ...TITLE_ITEMS];
   }, [customAdminTitles, profileData.purchasedTitles]);
 
-  // Combine default fonts + Admin custom fonts
+  // Combine default fonts + Admin custom fonts + User custom font
   const allFontsCatalog = useMemo(() => {
     const adminMapped: FontItem[] = (customAdminFonts || []).map(af => ({
       id: af.id,
@@ -209,8 +313,73 @@ export default function ShopModal({
       description: af.description,
       badge: 'Admin Custom 🔤'
     }));
-    return [...FONT_ITEMS, ...adminMapped];
-  }, [customAdminFonts]);
+
+    const userCustomFontItem: FontItem[] = (profileData.purchasedFonts?.includes('custom_font') && profileData.customFontConfig) ? [{
+      id: 'custom_font',
+      name: profileData.customFontConfig.name || 'Custom Uploaded Font',
+      fontFamily: profileData.customFontConfig.fontFamily,
+      price: 1000,
+      sampleText: profileData.customFontConfig.sampleText || 'ROBLOX VOTER 2026',
+      category: 'Custom',
+      description: 'Your unlocked custom font studio.',
+      badge: 'Your Custom 🔤'
+    }] : [];
+
+    return [...userCustomFontItem, ...adminMapped, ...FONT_ITEMS];
+  }, [customAdminFonts, profileData.purchasedFonts, profileData.customFontConfig]);
+
+  // Combine default colors + User custom color
+  const allColorsCatalog = useMemo(() => {
+    const userCustomColorItem: NameColorItem[] = (profileData.purchasedColors?.includes('custom_color') && profileData.customColorConfig) ? [{
+      id: 'custom_color',
+      name: profileData.customColorConfig.name || 'Custom Name Color',
+      price: 1000,
+      description: 'Your unlocked custom gradient & glow username aura.',
+      badge: 'Your Custom 🎨',
+      className: 'font-extrabold',
+      style: getNameColorStyle('custom_color', profileData.customColorConfig).style
+    }] : [];
+
+    return [...userCustomColorItem, ...NAME_COLORS];
+  }, [profileData.purchasedColors, profileData.customColorConfig]);
+
+  const handleSaveColorBuilder = async () => {
+    if (!onSaveCustomColor) return;
+    setIsSavingCustomColor(true);
+    try {
+      const colorPayload: CustomColorConfig = {
+        name: customColorName.trim() || 'My Custom Aura',
+        type: customColorType,
+        color1: customColor1,
+        color2: customColor2,
+        color3: customColor3,
+        glowColor: customGlowColor,
+        glowIntensity: customGlowIntensity,
+      };
+      await onSaveCustomColor(colorPayload);
+    } finally {
+      setIsSavingCustomColor(false);
+    }
+  };
+
+  const handleSaveFontBuilder = async () => {
+    if (!onSaveCustomFont) return;
+    setIsSavingCustomFont(true);
+    try {
+      const fontPayload: CustomFontConfig = {
+        name: customFontName.trim() || 'My Custom Font',
+        fontFamily: customFontFamily.trim() || 'sans-serif',
+        sampleText: customFontSample.trim() || 'ROBLOX VOTER 2026',
+      };
+      if (customFontUrl.trim()) fontPayload.fontUrl = customFontUrl.trim();
+      if (customFontDataUrl) fontPayload.fontDataUrl = customFontDataUrl;
+      if (customFontFileName) fontPayload.fontFileName = customFontFileName;
+
+      await onSaveCustomFont(fontPayload);
+    } finally {
+      setIsSavingCustomFont(false);
+    }
+  };
 
   // Filtered titles
   const filteredTitles = allTitlesCatalog.filter((item) => {
@@ -785,91 +954,315 @@ export default function ShopModal({
 
             {/* NAME COLORS TAB */}
             {activeTab === 'colors' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
-                {NAME_COLORS.map((item) => {
-                  const isOwned = profileData.purchasedColors.includes(item.id);
-                  const isEquipped = profileData.equippedColor === item.id;
-                  const canAfford = profileData.coins >= item.price;
-
-                  return (
-                    <div
-                      key={item.id}
-                      className={`relative overflow-hidden rounded-2xl border p-4 transition-all ${
-                        isEquipped
-                          ? 'border-emerald-500/80 bg-emerald-950/20 shadow-[0_0_20px_rgba(16,185,129,0.15)]'
-                          : isOwned
-                          ? 'border-zinc-700 bg-zinc-900/60 hover:border-zinc-600'
-                          : 'border-zinc-800 bg-zinc-900/30 hover:border-zinc-700'
-                      }`}
-                    >
-                      {item.badge && (
-                        <div className="absolute top-3 right-3 rounded-full bg-amber-500/20 px-2.5 py-0.5 text-[10px] font-extrabold text-amber-400 border border-amber-500/30">
-                          {item.badge}
-                        </div>
-                      )}
-
-                      {/* Preview Box */}
-                      <div className="mb-3 rounded-xl bg-zinc-950 p-3 border border-zinc-800 flex items-center justify-between">
-                        <span className="text-xs text-zinc-500 font-mono">Chat Preview:</span>
-                        <span className={`text-sm sm:text-base ${item.className}`}>
-                          {user?.displayName || 'Player1'}
-                        </span>
+              <div className="space-y-6">
+                {/* Custom Name Color Creator Studio Card */}
+                <div className="relative overflow-hidden rounded-3xl border border-cyan-500/50 bg-gradient-to-r from-cyan-950/80 via-blue-950/60 to-zinc-950 p-5 sm:p-6 shadow-2xl">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-cyan-500/30">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-2xl bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">
+                        <Palette size={22} />
                       </div>
-
-                      <div className="mb-3">
+                      <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="font-bold text-white text-base">{item.name}</h3>
+                          <h3 className="font-extrabold text-white text-lg sm:text-xl">Custom Name Color Creator Studio 🎨</h3>
+                          <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">
+                            1,000 Coins
+                          </span>
                         </div>
-                        <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
-                          {item.description}
+                        <p className="text-xs text-cyan-200/70 mt-0.5">
+                          Create custom multi-color gradient & glow username auras for your chat profile!
                         </p>
                       </div>
+                    </div>
+                  </div>
 
-                      {/* Price / Action Button */}
-                      <div className="flex items-center justify-between pt-2 border-t border-zinc-800/80 mt-auto">
-                        <div className="flex items-center gap-1.5">
-                          {item.price === 0 ? (
-                            <span className="text-xs font-bold text-emerald-400">FREE</span>
-                          ) : (
-                            <>
-                              <Coins size={15} className="text-amber-400" />
-                              <span className="text-sm font-black text-amber-300">
-                                {item.price} <span className="text-xs font-normal text-zinc-400">Coins</span>
-                              </span>
-                            </>
-                          )}
+                  {/* Creator Form Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-5">
+                    {/* Controls Column */}
+                    <div className="space-y-4">
+                      <div>
+                        <label className="text-xs font-bold text-zinc-300 block mb-1">Color Preset Name</label>
+                        <input
+                          type="text"
+                          value={customColorName}
+                          onChange={(e) => setCustomColorName(e.target.value)}
+                          placeholder="e.g. Cyber Neon Aura"
+                          className="w-full rounded-xl bg-zinc-900 border border-zinc-700 px-3.5 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-400"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-zinc-300 block mb-1">Color Mode</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { id: 'solid', label: 'Solid Color' },
+                            { id: 'linear', label: '2-Color Gradient' },
+                            { id: 'radial', label: '3-Color Rainbow' },
+                          ].map((m) => (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => setCustomColorType(m.id as any)}
+                              className={`py-1.5 px-2 rounded-xl text-xs font-bold border transition-all ${
+                                customColorType === m.id
+                                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400'
+                                  : 'bg-zinc-900/60 text-zinc-400 border-zinc-800 hover:border-zinc-700'
+                              }`}
+                            >
+                              {m.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Color Pickers */}
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-[11px] font-bold text-zinc-400 block mb-1">Color 1</label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={customColor1}
+                              onChange={(e) => setCustomColor1(e.target.value)}
+                              className="h-9 w-9 rounded-lg bg-zinc-900 border border-zinc-700 cursor-pointer p-0.5"
+                            />
+                            <span className="text-[11px] font-mono text-zinc-300 uppercase">{customColor1}</span>
+                          </div>
                         </div>
 
-                        {isEquipped ? (
-                          <div className="flex items-center gap-1 text-xs font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/30">
-                            <Check size={14} />
-                            Equipped
+                        {customColorType !== 'solid' && (
+                          <div>
+                            <label className="text-[11px] font-bold text-zinc-400 block mb-1">Color 2</label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="color"
+                                value={customColor2}
+                                onChange={(e) => setCustomColor2(e.target.value)}
+                                className="h-9 w-9 rounded-lg bg-zinc-900 border border-zinc-700 cursor-pointer p-0.5"
+                              />
+                              <span className="text-[11px] font-mono text-zinc-300 uppercase">{customColor2}</span>
+                            </div>
                           </div>
-                        ) : isOwned ? (
-                          <button
-                            onClick={() => handleEquip('color', item.id)}
-                            disabled={loadingItemId === item.id}
-                            className="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-1.5 text-xs font-bold text-white transition-all active:scale-95"
-                          >
-                            {loadingItemId === item.id ? 'Equipping...' : 'Equip'}
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleBuy('color', item)}
-                            disabled={!canAfford || !user || loadingItemId === item.id}
-                            className={`rounded-xl px-4 py-1.5 text-xs font-bold transition-all active:scale-95 ${
-                              canAfford && user
-                                ? 'bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black shadow-md'
-                                : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-                            }`}
-                          >
-                            {loadingItemId === item.id ? 'Buying...' : !user ? 'Sign in' : canAfford ? 'Buy' : 'Need Coins'}
-                          </button>
+                        )}
+
+                        {customColorType === 'radial' && (
+                          <div>
+                            <label className="text-[11px] font-bold text-zinc-400 block mb-1">Color 3</label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="color"
+                                value={customColor3}
+                                onChange={(e) => setCustomColor3(e.target.value)}
+                                className="h-9 w-9 rounded-lg bg-zinc-900 border border-zinc-700 cursor-pointer p-0.5"
+                              />
+                              <span className="text-[11px] font-mono text-zinc-300 uppercase">{customColor3}</span>
+                            </div>
+                          </div>
                         )}
                       </div>
+
+                      {/* Glow Controls */}
+                      <div className="grid grid-cols-2 gap-3 pt-2 border-t border-cyan-500/20">
+                        <div>
+                          <label className="text-[11px] font-bold text-zinc-400 block mb-1">Glow Color</label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={customGlowColor}
+                              onChange={(e) => setCustomGlowColor(e.target.value)}
+                              className="h-9 w-9 rounded-lg bg-zinc-900 border border-zinc-700 cursor-pointer p-0.5"
+                            />
+                            <span className="text-[11px] font-mono text-zinc-300 uppercase">{customGlowColor}</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] font-bold text-zinc-400 block mb-1">Glow Strength</label>
+                          <select
+                            value={customGlowIntensity}
+                            onChange={(e) => setCustomGlowIntensity(e.target.value as any)}
+                            className="w-full rounded-xl bg-zinc-900 border border-zinc-700 py-2 px-2 text-xs text-white focus:outline-none focus:border-cyan-400"
+                          >
+                            <option value="none">No Glow</option>
+                            <option value="soft">Soft Glow</option>
+                            <option value="medium">Medium Aura</option>
+                            <option value="high">Ultra Nitro Glow 🔥</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Quick Swatches */}
+                      <div>
+                        <label className="text-[11px] font-bold text-zinc-400 block mb-1.5">Quick Starter Palettes</label>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            { name: 'Cyber Neon', c1: '#06b6d4', c2: '#3b82f6', c3: '#a855f7', glow: '#06b6d4', type: 'linear' },
+                            { name: 'Fiery Crimson', c1: '#ef4444', c2: '#f97316', c3: '#f59e0b', glow: '#ef4444', type: 'linear' },
+                            { name: 'Toxic Slime', c1: '#10b981', c2: '#06b6d4', c3: '#84cc16', glow: '#10b981', type: 'linear' },
+                            { name: 'Royal Gold', c1: '#f59e0b', c2: '#fbbf24', c3: '#d97706', glow: '#f59e0b', type: 'linear' },
+                            { name: 'Rainbow Aura', c1: '#ef4444', c2: '#10b981', c3: '#06b6d4', glow: '#3b82f6', type: 'radial' },
+                          ].map((preset) => (
+                            <button
+                              key={preset.name}
+                              type="button"
+                              onClick={() => {
+                                setCustomColorType(preset.type as any);
+                                setCustomColor1(preset.c1);
+                                setCustomColor2(preset.c2);
+                                setCustomColor3(preset.c3);
+                                setCustomGlowColor(preset.glow);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700/80 text-[11px] font-medium text-zinc-300 flex items-center gap-1.5 transition-all"
+                            >
+                              <span
+                                className="w-3 h-3 rounded-full border border-white/20"
+                                style={{ background: `linear-gradient(90deg, ${preset.c1}, ${preset.c2})` }}
+                              />
+                              {preset.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  );
-                })}
+
+                    {/* Preview Column */}
+                    <div className="flex flex-col justify-between rounded-2xl bg-zinc-950 p-4 border border-cyan-500/30">
+                      <div>
+                        <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider block mb-2">
+                          Live Chat Preview
+                        </span>
+
+                        <div className="p-4 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs px-2 py-0.5 rounded bg-amber-400/20 text-amber-200 border border-amber-400/50 font-black">
+                              {equippedTitleStyle.title || equippedTitleStyle.name}
+                            </span>
+                            <span
+                              className="font-extrabold text-base transition-all"
+                              style={getNameColorStyle('custom_color', {
+                                name: customColorName,
+                                type: customColorType,
+                                color1: customColor1,
+                                color2: customColor2,
+                                color3: customColor3,
+                                glowColor: customGlowColor,
+                                glowIntensity: customGlowIntensity,
+                              }).style}
+                            >
+                              {user?.displayName || 'Player1'}
+                            </span>
+                            <span className="text-xs text-zinc-500 font-mono">: Hello world! Check out my custom color!</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-6 pt-4 border-t border-zinc-800">
+                        <button
+                          type="button"
+                          onClick={handleSaveColorBuilder}
+                          disabled={isSavingCustomColor || !user}
+                          className="w-full py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-extrabold text-sm shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                          {isSavingCustomColor ? (
+                            'Saving & Applying...'
+                          ) : profileData.purchasedColors?.includes('custom_color') ? (
+                            'Update & Equip Custom Color 🎨'
+                          ) : (
+                            'Unlock & Equip Custom Color (1,000 Coins) 🎨'
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Preset Colors Catalog */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
+                  {allColorsCatalog.map((item) => {
+                    const isOwned = profileData.purchasedColors.includes(item.id);
+                    const isEquipped = profileData.equippedColor === item.id;
+                    const canAfford = profileData.coins >= item.price;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={`relative overflow-hidden rounded-2xl border p-4 transition-all ${
+                          isEquipped
+                            ? 'border-emerald-500/80 bg-emerald-950/20 shadow-[0_0_20px_rgba(16,185,129,0.15)]'
+                            : isOwned
+                            ? 'border-zinc-700 bg-zinc-900/60 hover:border-zinc-600'
+                            : 'border-zinc-800 bg-zinc-900/30 hover:border-zinc-700'
+                        }`}
+                      >
+                        {item.badge && (
+                          <div className="absolute top-3 right-3 rounded-full bg-amber-500/20 px-2.5 py-0.5 text-[10px] font-extrabold text-amber-400 border border-amber-500/30">
+                            {item.badge}
+                          </div>
+                        )}
+
+                        {/* Preview Box */}
+                        <div className="mb-3 rounded-xl bg-zinc-950 p-3 border border-zinc-800 flex items-center justify-between">
+                          <span className="text-xs text-zinc-500 font-mono">Chat Preview:</span>
+                          <span className={`text-sm sm:text-base ${item.className}`} style={item.style}>
+                            {user?.displayName || 'Player1'}
+                          </span>
+                        </div>
+
+                        <div className="mb-3">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-white text-base">{item.name}</h3>
+                          </div>
+                          <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                            {item.description}
+                          </p>
+                        </div>
+
+                        {/* Price / Action Button */}
+                        <div className="flex items-center justify-between pt-2 border-t border-zinc-800/80 mt-auto">
+                          <div className="flex items-center gap-1.5">
+                            {item.price === 0 ? (
+                              <span className="text-xs font-bold text-emerald-400">FREE</span>
+                            ) : (
+                              <>
+                                <Coins size={15} className="text-amber-400" />
+                                <span className="text-sm font-black text-amber-300">
+                                  {item.price} <span className="text-xs font-normal text-zinc-400">Coins</span>
+                                </span>
+                              </>
+                            )}
+                          </div>
+
+                          {isEquipped ? (
+                            <div className="flex items-center gap-1 text-xs font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/30">
+                              <Check size={14} />
+                              Equipped
+                            </div>
+                          ) : isOwned ? (
+                            <button
+                              onClick={() => handleEquip('color', item.id)}
+                              disabled={loadingItemId === item.id}
+                              className="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-1.5 text-xs font-bold text-white transition-all active:scale-95"
+                            >
+                              {loadingItemId === item.id ? 'Equipping...' : 'Equip'}
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleBuy('color', item)}
+                              disabled={!canAfford || !user || loadingItemId === item.id}
+                              className={`rounded-xl px-4 py-1.5 text-xs font-bold transition-all active:scale-95 ${
+                                canAfford && user
+                                  ? 'bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black shadow-md'
+                                  : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                              }`}
+                            >
+                              {loadingItemId === item.id ? 'Buying...' : !user ? 'Sign in' : canAfford ? 'Buy' : 'Need Coins'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -1301,7 +1694,204 @@ export default function ShopModal({
 
             {/* APP FONTS TAB */}
             {activeTab === 'fonts' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
+              <div className="space-y-6">
+                {/* Custom Font Creator Studio Card */}
+                <div className="relative overflow-hidden rounded-3xl border border-purple-500/50 bg-gradient-to-r from-purple-950/80 via-fuchsia-950/60 to-zinc-950 p-5 sm:p-6 shadow-2xl">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-purple-500/30">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-2xl bg-purple-500/20 text-purple-300 border border-purple-400/40">
+                        <Type size={22} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-extrabold text-white text-lg sm:text-xl">Custom Font Upload & Studio 🔤</h3>
+                          <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-400/40">
+                            1,000 Coins
+                          </span>
+                        </div>
+                        <p className="text-xs text-purple-200/70 mt-0.5">
+                          Upload or select custom Google Fonts for your entire Roblox app interface & chat!
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Form Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-5">
+                    {/* Input Controls */}
+                    <div className="space-y-4">
+                      {/* Font File Upload Dropzone / Button */}
+                      <div className="rounded-2xl border-2 border-dashed border-purple-500/40 bg-purple-950/20 p-4 transition-all hover:border-purple-400">
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-xs font-extrabold text-purple-200 flex items-center gap-1.5">
+                            <Upload size={14} className="text-purple-400" />
+                            Upload Font File (.ttf, .otf, .woff, .woff2)
+                          </label>
+                          {customFontFileName && (
+                            <span className="text-[10px] text-emerald-400 font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-1">
+                              <CheckCircle size={10} /> Loaded
+                            </span>
+                          )}
+                        </div>
+
+                        {customFontFileName ? (
+                          <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-zinc-900/90 border border-purple-500/30">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="p-2 rounded-lg bg-purple-500/20 text-purple-300 shrink-0">
+                                <FileText size={18} />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-white truncate">{customFontFileName}</p>
+                                <p className="text-[10px] text-zinc-400">Custom font file active & synced</p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleClearUploadedFont}
+                              className="p-1.5 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-zinc-800 transition-colors shrink-0"
+                              title="Remove uploaded font file"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        ) : (
+                          <label className="flex flex-col items-center justify-center p-4 rounded-xl bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-800 cursor-pointer transition-all group text-center">
+                            <FileUp size={24} className="text-purple-400 group-hover:scale-110 transition-transform mb-1.5" />
+                            <span className="text-xs font-bold text-purple-200">Click to Select or Drop Font File</span>
+                            <span className="text-[10px] text-zinc-400 mt-0.5">Supports TTF, OTF, WOFF, WOFF2 (Max 2.5MB)</span>
+                            <input
+                              type="file"
+                              accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2,application/x-font-ttf,application/x-font-opentype"
+                              onChange={handleFontFileUpload}
+                              className="hidden"
+                            />
+                          </label>
+                        )}
+
+                        {uploadedFontError && (
+                          <p className="text-[11px] text-red-400 font-medium mt-2 flex items-center gap-1">
+                            <XCircle size={12} /> {uploadedFontError}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="relative">
+                        <div className="absolute inset-0 flex items-center">
+                          <div className="w-full border-t border-purple-500/20" />
+                        </div>
+                        <div className="relative flex justify-center text-[10px] uppercase font-mono font-bold">
+                          <span className="bg-zinc-950 px-2 text-zinc-500">OR Google / Web Fonts</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-zinc-300 block mb-1">Custom Font Title</label>
+                        <input
+                          type="text"
+                          value={customFontName}
+                          onChange={(e) => setCustomFontName(e.target.value)}
+                          placeholder="e.g. My Pixel Font"
+                          className="w-full rounded-xl bg-zinc-900 border border-zinc-700 px-3.5 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-purple-400"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-zinc-300 block mb-1">Google Font Family Name</label>
+                        <input
+                          type="text"
+                          value={customFontFamily}
+                          onChange={(e) => setCustomFontFamily(e.target.value)}
+                          placeholder="e.g. Press Start 2P, Bangers, Pacifico, Creepster..."
+                          className="w-full rounded-xl bg-zinc-900 border border-zinc-700 px-3.5 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-purple-400"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-zinc-300 block mb-1">Direct Font URL (Optional)</label>
+                        <input
+                          type="url"
+                          value={customFontUrl}
+                          onChange={(e) => setCustomFontUrl(e.target.value)}
+                          placeholder="https://fonts.googleapis.com/css2?family=..."
+                          className="w-full rounded-xl bg-zinc-900 border border-zinc-700 px-3.5 py-2 text-xs font-mono text-zinc-300 placeholder-zinc-600 focus:outline-none focus:border-purple-400"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-zinc-300 block mb-1.5">Quick Starter Fonts</label>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            'Press Start 2P',
+                            'Bangers',
+                            'Pacifico',
+                            'Creepster',
+                            'Cinzel',
+                            'Monoton',
+                            'Fira Code',
+                            'Lobster',
+                            'Permanent Marker',
+                            'Outfit'
+                          ].map((font) => (
+                            <button
+                              key={font}
+                              type="button"
+                              onClick={() => {
+                                setCustomFontFamily(font);
+                                setCustomFontName(`${font} Font`);
+                              }}
+                              className={`px-2.5 py-1 rounded-lg border text-xs font-medium transition-all ${
+                                customFontFamily === font
+                                  ? 'bg-purple-500/20 text-purple-300 border-purple-400'
+                                  : 'bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 border-zinc-700/80'
+                              }`}
+                            >
+                              {font}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Preview Column */}
+                    <div className="flex flex-col justify-between rounded-2xl bg-zinc-950 p-4 border border-purple-500/30">
+                      <div>
+                        <span className="text-xs font-bold text-purple-400 uppercase tracking-wider block mb-2">
+                          Live Font Preview
+                        </span>
+
+                        <div className="p-4 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-2">
+                          <span className="text-[10px] text-zinc-500 font-mono block">Font Sample:</span>
+                          <p
+                            style={{ fontFamily: customFontFamily }}
+                            className="text-lg font-bold text-white leading-relaxed break-words"
+                          >
+                            {customFontSample || 'ROBLOX VOTER 2026 • LEADERBOARD #1'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-6 pt-4 border-t border-zinc-800">
+                        <button
+                          type="button"
+                          onClick={handleSaveFontBuilder}
+                          disabled={isSavingCustomFont || !user}
+                          className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-600 hover:from-purple-400 hover:to-fuchsia-500 text-black font-extrabold text-sm shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                          {isSavingCustomFont ? (
+                            'Saving & Applying...'
+                          ) : profileData.purchasedFonts?.includes('custom_font') ? (
+                            'Update & Equip Custom Font 🔤'
+                          ) : (
+                            'Unlock & Equip Custom Font (1,000 Coins) 🔤'
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Font Items Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
                 {allFontsCatalog.map((item) => {
                   const fontList = profileData.purchasedFonts || ['default'];
                   const isOwned = fontList.includes(item.id) || item.price === 0;
@@ -1424,6 +2014,7 @@ export default function ShopModal({
                     </div>
                   );
                 })}
+                </div>
               </div>
             )}
 

@@ -22,7 +22,7 @@ import {
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { Trophy, Plus, LogIn, LogOut, Gamepad2, Search, TrendingUp, AlertTriangle, BarChart3, CircleUser, Download, Shield, Star, Flame, Sparkles, FileText, Coins, ShoppingBag, MessageSquare, Bell } from 'lucide-react';
 import { db, auth, signIn, logout } from './firebase';
-import { Game, UserStreakData, GlobalAnnouncement, UserProfileData, AppNotification, CustomTitleRequest, AdminCustomTitle, AdminCustomFont, CustomThemeConfig } from './types';
+import { Game, UserStreakData, GlobalAnnouncement, UserProfileData, AppNotification, CustomTitleRequest, AdminCustomTitle, AdminCustomFont, CustomThemeConfig, CustomColorConfig, CustomFontConfig } from './types';
 import GameCard from './components/GameCard';
 import AddGameModal from './components/AddGameModal';
 import TopGamesChart from './components/TopGamesChart';
@@ -228,6 +228,8 @@ function App() {
           equippedTitle: data.equippedTitle || 'default',
           purchasedTitles: Array.isArray(data.purchasedTitles) ? data.purchasedTitles : ['default'],
           customThemeConfig: data.customThemeConfig || undefined,
+          customColorConfig: data.customColorConfig || undefined,
+          customFontConfig: data.customFontConfig || undefined,
           displayName: data.displayName || user.displayName || '',
           photoURL: data.photoURL || user.photoURL || '',
           lastDailyBonusDate: data.lastDailyBonusDate || '',
@@ -252,39 +254,6 @@ function App() {
       }
     }, (err) => {
       console.warn("User profile listener warning:", err);
-    });
-
-    return () => unsubscribe();
-  }, [user]);
-
-  // Realtime listener for user's custom title request
-  const [customTitleRequest, setCustomTitleRequest] = useState<CustomTitleRequest | null>(null);
-
-  useEffect(() => {
-    if (!user) {
-      setCustomTitleRequest(null);
-      return;
-    }
-
-    const q = query(
-      collection(db, 'customTitleRequests'),
-      where('userId', '==', user.uid),
-      orderBy('requestedAt', 'desc'),
-      limit(1)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (!snapshot.empty) {
-        const docSnap = snapshot.docs[0];
-        setCustomTitleRequest({
-          id: docSnap.id,
-          ...docSnap.data()
-        } as CustomTitleRequest);
-      } else {
-        setCustomTitleRequest(null);
-      }
-    }, (err) => {
-      console.warn("Custom title request listener warning:", err);
     });
 
     return () => unsubscribe();
@@ -318,6 +287,87 @@ function App() {
       unsubFonts();
     };
   }, []);
+
+  // Dynamically load font assets & apply global CSS font family
+  useEffect(() => {
+    const activeFontId = previewFontId || userProfileData.equippedFont;
+    const fontStyle = getFontItemStyle(activeFontId, customAdminFonts, userProfileData.customFontConfig);
+    if (!fontStyle) return;
+
+    const styleId = 'app-global-active-font-style';
+    let styleEl = document.getElementById(styleId) as HTMLStyleElement | null;
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = styleId;
+      document.head.appendChild(styleEl);
+    }
+
+    const primaryFamily = fontStyle.fontFamily.split(',')[0].replace(/['"]/g, '').trim();
+
+    let fontImportRule = '';
+
+    if (activeFontId === 'custom_font' || activeFontId?.startsWith('custom_')) {
+      const config = userProfileData.customFontConfig;
+      if (config?.fontDataUrl) {
+        fontImportRule = `
+          @font-face {
+            font-family: '${primaryFamily}';
+            src: url('${config.fontDataUrl}');
+            font-weight: normal;
+            font-style: normal;
+            font-display: swap;
+          }
+        `;
+      } else if (config?.fontUrl) {
+        fontImportRule = `@import url('${config.fontUrl}');`;
+      } else if (primaryFamily && primaryFamily !== 'sans-serif' && primaryFamily !== 'Inter') {
+        fontImportRule = `@import url('https://fonts.googleapis.com/css2?family=${encodeURIComponent(primaryFamily)}:ital,wght@0,400;0,700;0,900;1,400;1,700&display=swap');`;
+      }
+    } else if (primaryFamily && primaryFamily !== 'Inter' && primaryFamily !== 'sans-serif') {
+      fontImportRule = `@import url('https://fonts.googleapis.com/css2?family=${encodeURIComponent(primaryFamily)}:ital,wght@0,400;0,700;0,900;1,400;1,700&display=swap');`;
+    }
+
+    styleEl.textContent = `
+      ${fontImportRule}
+
+      html, body, #root, *, button, input, select, textarea {
+        font-family: ${fontStyle.fontFamily} !important;
+      }
+    `;
+  }, [previewFontId, userProfileData.equippedFont, userProfileData.customFontConfig, customAdminFonts]);
+
+  // Realtime listener for user's custom title request
+  const [customTitleRequest, setCustomTitleRequest] = useState<CustomTitleRequest | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      setCustomTitleRequest(null);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'customTitleRequests'),
+      where('userId', '==', user.uid),
+      orderBy('requestedAt', 'desc'),
+      limit(1)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        const docSnap = snapshot.docs[0];
+        setCustomTitleRequest({
+          id: docSnap.id,
+          ...docSnap.data()
+        } as CustomTitleRequest);
+      } else {
+        setCustomTitleRequest(null);
+      }
+    }, (err) => {
+      console.warn("Custom title request listener warning:", err);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
 
   // Realtime listener for global announcement
   useEffect(() => {
@@ -975,18 +1025,22 @@ function App() {
     try {
       const userRef = doc(db, 'users', user.uid);
       if (type === 'color') {
+        setUserProfileData(prev => ({ ...prev, equippedColor: itemId }));
         await setDoc(userRef, { equippedColor: itemId }, { merge: true });
         const colorItem = getNameColorStyle(itemId);
         toast(`Equipped ${colorItem.name}! ✨`, 'success');
       } else if (type === 'theme') {
+        setUserProfileData(prev => ({ ...prev, equippedTheme: itemId }));
         await setDoc(userRef, { equippedTheme: itemId }, { merge: true });
         const themeItem = getBackgroundThemeStyle(itemId);
         toast(`Equipped ${themeItem.name} background! 🌌`, 'success');
       } else if (type === 'font') {
+        setUserProfileData(prev => ({ ...prev, equippedFont: itemId }));
         await setDoc(userRef, { equippedFont: itemId }, { merge: true });
         const fontItem = getFontItemStyle(itemId);
         toast(`Equipped ${fontItem.name} font! 🔤`, 'success');
       } else if (type === 'title') {
+        setUserProfileData(prev => ({ ...prev, equippedTitle: itemId }));
         await setDoc(userRef, { equippedTitle: itemId }, { merge: true });
         const titleItem = getTitleItemStyle(itemId);
         toast(`Equipped "${titleItem.title || 'No Title'}" title! 👑`, 'success');
@@ -1072,6 +1126,21 @@ function App() {
     }
   };
 
+  const sanitizeData = <T extends Record<string, any>>(obj: T): T => {
+    if (!obj || typeof obj !== 'object') return obj;
+    const clean: any = Array.isArray(obj) ? [] : {};
+    for (const [key, val] of Object.entries(obj)) {
+      if (val !== undefined) {
+        if (val && typeof val === 'object' && val.constructor?.name === 'Object') {
+          clean[key] = sanitizeData(val);
+        } else {
+          clean[key] = val;
+        }
+      }
+    }
+    return clean;
+  };
+
   const handleSaveCustomTheme = async (config: CustomThemeConfig): Promise<boolean> => {
     if (!user) {
       signIn();
@@ -1090,12 +1159,20 @@ function App() {
       const userRef = doc(db, 'users', user.uid);
       const updatedThemes = Array.from(new Set([...purchasedThemes, 'custom_discord']));
 
-      await setDoc(userRef, {
+      setUserProfileData(prev => ({
+        ...prev,
+        coins: isAlreadyOwned ? prev.coins : Math.max(0, prev.coins - 1000),
+        purchasedThemes: updatedThemes,
+        equippedTheme: 'custom_discord',
+        customThemeConfig: config,
+      }));
+
+      await setDoc(userRef, sanitizeData({
         coins: isAlreadyOwned ? userProfileData.coins : increment(-1000),
         purchasedThemes: updatedThemes,
         equippedTheme: 'custom_discord',
         customThemeConfig: config,
-      }, { merge: true });
+      }), { merge: true });
 
       if (!isAlreadyOwned) {
         toast('Purchased & applied Custom Discord Theme for 1,000 BloxCoins! 🎨', 'success');
@@ -1111,6 +1188,108 @@ function App() {
     } catch (err: any) {
       console.error('Failed to save custom theme:', err);
       toast('Failed to save theme. Please try again.', 'error');
+      return false;
+    }
+  };
+
+  const handleSaveCustomColor = async (config: CustomColorConfig): Promise<boolean> => {
+    if (!user) {
+      toast('Please sign in to save a custom color.', 'error');
+      return false;
+    }
+
+    const purchasedColors = userProfileData.purchasedColors || ['default'];
+    const isAlreadyOwned = purchasedColors.includes('custom_color');
+
+    if (!isAlreadyOwned && userProfileData.coins < 1000) {
+      toast('Not enough BloxCoins! You need 1,000 coins to create a Custom Name Color.', 'error');
+      return false;
+    }
+
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const updatedColors = Array.from(new Set([...purchasedColors, 'custom_color']));
+
+      setUserProfileData(prev => ({
+        ...prev,
+        coins: isAlreadyOwned ? prev.coins : Math.max(0, prev.coins - 1000),
+        purchasedColors: updatedColors,
+        equippedColor: 'custom_color',
+        customColorConfig: config,
+      }));
+
+      await setDoc(userRef, sanitizeData({
+        coins: isAlreadyOwned ? userProfileData.coins : increment(-1000),
+        purchasedColors: updatedColors,
+        equippedColor: 'custom_color',
+        customColorConfig: config,
+      }), { merge: true });
+
+      if (!isAlreadyOwned) {
+        toast('Purchased & applied Custom Name Color for 1,000 BloxCoins! 🎨', 'success');
+        await logActivity(
+          'shop_buy',
+          'Created Custom Name Color',
+          `${user.displayName || 'Player'} unlocked Custom Name Color Studio for 1,000 coins.`
+        );
+      } else {
+        toast('Updated & equipped Custom Name Color! 🎨', 'success');
+      }
+      return true;
+    } catch (err: any) {
+      console.error('Failed to save custom color:', err);
+      toast('Failed to save custom color. Please try again.', 'error');
+      return false;
+    }
+  };
+
+  const handleSaveCustomFont = async (config: CustomFontConfig): Promise<boolean> => {
+    if (!user) {
+      toast('Please sign in to save a custom font.', 'error');
+      return false;
+    }
+
+    const purchasedFonts = userProfileData.purchasedFonts || ['default'];
+    const isAlreadyOwned = purchasedFonts.includes('custom_font');
+
+    if (!isAlreadyOwned && userProfileData.coins < 1000) {
+      toast('Not enough BloxCoins! You need 1,000 coins to upload a Custom Font.', 'error');
+      return false;
+    }
+
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const updatedFonts = Array.from(new Set([...purchasedFonts, 'custom_font']));
+
+      setUserProfileData(prev => ({
+        ...prev,
+        coins: isAlreadyOwned ? prev.coins : Math.max(0, prev.coins - 1000),
+        purchasedFonts: updatedFonts,
+        equippedFont: 'custom_font',
+        customFontConfig: config,
+      }));
+
+      await setDoc(userRef, sanitizeData({
+        coins: isAlreadyOwned ? userProfileData.coins : increment(-1000),
+        purchasedFonts: updatedFonts,
+        equippedFont: 'custom_font',
+        customFontConfig: config,
+      }), { merge: true });
+
+      if (!isAlreadyOwned) {
+        toast('Purchased & applied Custom Font for 1,000 BloxCoins! 🔤', 'success');
+        await logActivity(
+          'shop_buy',
+          'Created Custom Font',
+          `${user.displayName || 'Player'} unlocked Custom Font Studio for 1,000 coins.`
+        );
+      } else {
+        toast('Updated & equipped Custom Font! 🔤', 'success');
+      }
+      return true;
+    } catch (err: any) {
+      console.error('Failed to save custom font:', err);
+      toast('Failed to save custom font. Please try again.', 'error');
       return false;
     }
   };
@@ -1255,7 +1434,7 @@ function App() {
   const backgroundThemeStyle = getBackgroundThemeStyle(activeThemeId, userProfileData.customThemeConfig);
 
   const activeFontId = previewFontId || userProfileData.equippedFont;
-  const fontStyle = getFontItemStyle(activeFontId, customAdminFonts);
+  const fontStyle = getFontItemStyle(activeFontId, customAdminFonts, userProfileData.customFontConfig);
 
   const unreadNotificationCount = notifications.filter(n => !n.isRead).length;
 
@@ -1686,6 +1865,8 @@ function App() {
         onRequestCustomTitle={handleRequestCustomTitle}
         customTitleRequest={customTitleRequest}
         onSaveCustomTheme={handleSaveCustomTheme}
+        onSaveCustomColor={handleSaveCustomColor}
+        onSaveCustomFont={handleSaveCustomFont}
         customAdminTitles={customAdminTitles}
         customAdminFonts={customAdminFonts}
         previewThemeId={previewThemeId}
