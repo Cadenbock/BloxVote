@@ -75,11 +75,13 @@ interface AdminDashboardProps {
   onClose: () => void;
   games: Game[];
   onVote: (gameId: string) => Promise<void>;
+  customAdminTitles?: any[];
+  customAdminFonts?: any[];
 }
 
 type AdminTab = 'overview' | 'games' | 'coins' | 'titles' | 'announcement' | 'updates' | 'chat' | 'admins' | 'activity';
 
-export default function AdminDashboard({ isOpen, onClose, games, onVote }: AdminDashboardProps) {
+export default function AdminDashboard({ isOpen, onClose, games, onVote, customAdminTitles = [], customAdminFonts = [] }: AdminDashboardProps) {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [activities, setActivities] = useState<Activity[]>([]);

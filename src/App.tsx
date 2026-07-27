@@ -231,6 +231,7 @@ function App() {
           displayName: data.displayName || user.displayName || '',
           photoURL: data.photoURL || user.photoURL || '',
           lastDailyBonusDate: data.lastDailyBonusDate || '',
+          lastCustomTitleRequestTime: typeof data.lastCustomTitleRequestTime === 'number' ? data.lastCustomTitleRequestTime : undefined,
         });
       } else {
         const initialProfile = {
@@ -1002,17 +1003,49 @@ function App() {
       return false;
     }
 
+    // Check 10 minute cooldown
+    const nowMs = Date.now();
+    let lastReqTime = userProfileData.lastCustomTitleRequestTime || 0;
+    if (customTitleRequest?.requestedAt) {
+      const ra = customTitleRequest.requestedAt;
+      if (typeof ra.toMillis === 'function') {
+        lastReqTime = Math.max(lastReqTime, ra.toMillis());
+      } else if (typeof ra.seconds === 'number') {
+        lastReqTime = Math.max(lastReqTime, ra.seconds * 1000);
+      }
+    }
+    try {
+      const local = localStorage.getItem(`lastCustomTitleRequestTime_${user.uid}`);
+      if (local) {
+        lastReqTime = Math.max(lastReqTime, parseInt(local, 10) || 0);
+      }
+    } catch (e) {}
+
+    const COOLDOWN_MS = 10 * 60 * 1000;
+    if (lastReqTime > 0 && (nowMs - lastReqTime) < COOLDOWN_MS) {
+      const remainingSec = Math.ceil((COOLDOWN_MS - (nowMs - lastReqTime)) / 1000);
+      const mins = Math.floor(remainingSec / 60);
+      const secs = remainingSec % 60;
+      toast(`Cooldown active! Please wait ${mins}m ${secs}s before creating another custom title.`, 'error');
+      return false;
+    }
+
     if (userProfileData.coins < 1000) {
       toast('Not enough BloxCoins! You need 1,000 coins to request a custom title.', 'error');
       return false;
     }
 
     try {
-      // Deduct 1,000 coins
+      // Deduct 1,000 coins & set cooldown timestamp
       const userRef = doc(db, 'users', user.uid);
       await updateDoc(userRef, {
-        coins: increment(-1000)
+        coins: increment(-1000),
+        lastCustomTitleRequestTime: nowMs
       });
+
+      try {
+        localStorage.setItem(`lastCustomTitleRequestTime_${user.uid}`, nowMs.toString());
+      } catch (e) {}
 
       // Submit custom title request
       await addDoc(collection(db, 'customTitleRequests'), {

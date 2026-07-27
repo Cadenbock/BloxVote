@@ -297,6 +297,7 @@ export function getNameColorStyle(colorId?: string): NameColorItem {
 export function getBackgroundThemeStyle(themeId?: string, customConfig?: any): BackgroundThemeItem {
   if (themeId === 'custom_discord' || themeId?.startsWith('custom_')) {
     if (customConfig) {
+      const accent = customConfig.accentColor || '#6366f1';
       return {
         id: 'custom_discord',
         name: customConfig.name || 'Custom Discord Theme',
@@ -305,7 +306,11 @@ export function getBackgroundThemeStyle(themeId?: string, customConfig?: any): B
         badge: 'Discord Custom 🎨',
         backgroundClass: customConfig.backgroundClass || 'bg-gradient-to-b from-indigo-950 via-zinc-950 to-slate-950 text-zinc-100',
         cardBorderClass: customConfig.cardBorderClass || 'border-indigo-500/40',
-        style: { background: customConfig.bgGradient || 'radial-gradient(circle at 50% 20%, #1e1b4b 0%, #0f172a 50%, #09090b 100%)' }
+        style: { 
+          background: customConfig.bgGradient || 'radial-gradient(circle at 50% 20%, #1e1b4b 0%, #0f172a 50%, #09090b 100%)',
+          borderColor: accent,
+          boxShadow: `0 0 20px ${accent}50`
+        }
       };
     }
   }
@@ -325,7 +330,7 @@ export interface TitleItem {
   price: number;
   description: string;
   badge?: string;
-  category: 'Roblox' | 'Gaming' | 'Flex' | 'Funny' | 'Roleplay' | 'Status' | 'Popular' | 'Vip';
+  category: 'Roblox' | 'Gaming' | 'Flex' | 'Funny' | 'Roleplay' | 'Status' | 'Popular' | 'Vip' | string;
   tagClass: string;
 }
 

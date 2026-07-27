@@ -146,6 +146,18 @@
     "/users/{userId}/notifications/{notificationId}": {
       "schema": "AppNotification",
       "description": "Subcollection of user notifications."
+    },
+    "/customTitleRequests/{requestId}": {
+      "schema": "CustomTitleRequest",
+      "description": "Custom title requests submitted by users for admin approval."
+    },
+    "/customAdminTitles/{titleId}": {
+      "schema": "CustomAdminTitle",
+      "description": "Custom titles added by admins for the shop."
+    },
+    "/customAdminFonts/{fontId}": {
+      "schema": "CustomAdminFont",
+      "description": "Custom fonts added by admins for the shop."
     }
   }
 }
