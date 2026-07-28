@@ -17,10 +17,13 @@ import {
   getDocFromServer,
   collectionGroup,
   where,
-  limit
+  limit,
+  getDocs
 } from "firebase/firestore";
+import { containsProfanityOrCensoredWords, setCustomBannedWords } from './lib/chatFilter';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { Trophy, Plus, LogIn, LogOut, Gamepad2, Search, TrendingUp, AlertTriangle, BarChart3, CircleUser, Download, Shield, Star, Flame, Sparkles, FileText, Coins, ShoppingBag, MessageSquare, Bell } from 'lucide-react';
+import { Trophy, Plus, LogIn, LogOut, Gamepad2, Search, TrendingUp, AlertTriangle, BarChart3, CircleUser, Download, Shield, Star, Flame, Sparkles, FileText, Coins, ShoppingBag, MessageSquare, Bell, Settings as SettingsIcon } from 'lucide-react';
+import { updateProfile } from 'firebase/auth';
 import { db, auth, signIn, logout } from './firebase';
 import { Game, UserStreakData, GlobalAnnouncement, UserProfileData, AppNotification, CustomTitleRequest, AdminCustomTitle, AdminCustomFont, CustomThemeConfig, CustomColorConfig, CustomFontConfig } from './types';
 import GameCard from './components/GameCard';
@@ -35,6 +38,8 @@ import ShopModal from './components/ShopModal';
 import PublicChat from './components/PublicChat';
 import DirectMessagesModal from './components/DirectMessagesModal';
 import NotificationsModal from './components/NotificationsModal';
+import { SettingsModal } from './components/SettingsModal';
+import { BloxVoteLoadingScreen } from './components/BloxVoteLoadingScreen';
 import { getNameColorStyle, getBackgroundThemeStyle, getFontItemStyle, getTitleItemStyle, NameColorItem, BackgroundThemeItem, FontItem, TitleItem } from './lib/shopData';
 import { useToast } from './components/Toast';
 import { logActivity } from './lib/activity';
@@ -165,6 +170,8 @@ function App() {
   const [currentTab, setCurrentTab] = useState<'leaderboard' | 'analytics' | 'chat'>('leaderboard');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isShopOpen, setIsShopOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
   const [userStreak, setUserStreak] = useState<UserStreakData | null>(null);
@@ -187,6 +194,20 @@ function App() {
   });
 
   const featuredGames = useMemo(() => games.filter(g => g.isFeatured), [games]);
+
+  // Sync custom banned words from Firestore settings/chatFilter
+  useEffect(() => {
+    const filterRef = doc(db, 'settings', 'chatFilter');
+    const unsubscribe = onSnapshot(filterRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (Array.isArray(data.words)) {
+          setCustomBannedWords(data.words);
+        }
+      }
+    }, (err) => console.warn('Chat filter sync warning:', err));
+    return () => unsubscribe();
+  }, []);
 
   // Realtime listener for User Profile (coins, cosmetics)
   useEffect(() => {
@@ -1315,6 +1336,76 @@ function App() {
     }
   };
 
+  const handleUpdateProfile = async (fields: { displayName?: string; photoURL?: string; bio?: string }) => {
+    if (!user) return false;
+    const newName = fields.displayName?.trim();
+
+    if (newName) {
+      // 1. Check if username contains censored or profane words
+      const profanityCheck = containsProfanityOrCensoredWords(newName);
+      if (profanityCheck.isBlocked) {
+        toast(`Username blocked: contains censored word "${profanityCheck.matchedWord}". Please pick an appropriate username.`, "error");
+        return false;
+      }
+
+      // 2. Check username uniqueness across all players
+      try {
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('displayNameLower', '==', newName.toLowerCase()));
+        const snap = await getDocs(q);
+
+        let takenByAnother = false;
+        snap.forEach((docSnap) => {
+          if (docSnap.id !== user.uid) {
+            takenByAnother = true;
+          }
+        });
+
+        if (!takenByAnother) {
+          const allUsersSnap = await getDocs(query(usersRef, limit(200)));
+          allUsersSnap.forEach((docSnap) => {
+            if (docSnap.id !== user.uid) {
+              const dName = docSnap.data().displayName;
+              if (typeof dName === 'string' && dName.trim().toLowerCase() === newName.toLowerCase()) {
+                takenByAnother = true;
+              }
+            }
+          });
+        }
+
+        if (takenByAnother) {
+          toast(`The username "${newName}" is already taken by another player. Two players cannot share the same username!`, "error");
+          return false;
+        }
+      } catch (err) {
+        console.warn("Username uniqueness check warning:", err);
+      }
+    }
+
+    try {
+      if (fields.displayName || fields.photoURL) {
+        await updateProfile(user, {
+          displayName: fields.displayName || user.displayName,
+          photoURL: fields.photoURL || user.photoURL,
+        });
+      }
+      const userRef = doc(db, 'users', user.uid);
+      await setDoc(userRef, {
+        displayName: fields.displayName || user.displayName || '',
+        displayNameLower: (fields.displayName || user.displayName || '').toLowerCase(),
+        photoURL: fields.photoURL || user.photoURL || '',
+        bio: fields.bio || '',
+      }, { merge: true });
+
+      toast("Account settings & display profile updated! ✨", "success");
+      return true;
+    } catch (err) {
+      console.error("Failed to update user profile:", err);
+      toast("Failed to update profile settings. Please try again.", "error");
+      return false;
+    }
+  };
+
   const handleAddGame = async (gameData: any) => {
     if (!user) return;
 
@@ -1444,55 +1535,59 @@ function App() {
       className={`min-h-screen font-sans transition-all duration-500 ${backgroundThemeStyle.backgroundClass}`}
     >
       {/* Navigation */}
-      <nav className="sticky top-0 z-40 border-b border-zinc-800 bg-black/90 backdrop-blur-md">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex min-h-[4rem] py-2.5 items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-2 cursor-pointer" onClick={() => setCurrentTab('leaderboard')}>
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 shadow-lg shadow-blue-900/20 shrink-0">
-                <Gamepad2 className="text-white" size={20} />
+      <nav className="sticky top-0 z-40 border-b border-zinc-800/80 bg-black/85 backdrop-blur-xl py-1">
+        <div className="mx-auto max-w-7xl px-6 sm:px-10 lg:px-12">
+          <div className="flex min-h-[4.5rem] py-3 items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3 cursor-pointer group" onClick={() => setCurrentTab('leaderboard')}>
+              <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 p-1 shadow-lg shadow-blue-900/30 overflow-hidden shrink-0 group-hover:scale-105 transition-transform border border-blue-400/30">
+                <img 
+                  src="/favicon.png" 
+                  alt="BloxVote Logo" 
+                  className="h-full w-full object-contain"
+                />
               </div>
-              <span className="text-xl sm:text-2xl font-black tracking-tighter text-white">BLOXVOTE</span>
+              <span className="text-2xl sm:text-3xl font-black tracking-tighter text-white group-hover:text-blue-400 transition-colors">BLOXVOTE</span>
             </div>
 
             {/* Navigation Tabs */}
-            <div className="hidden md:flex items-center gap-1 rounded-full bg-zinc-900 border border-zinc-800 p-1">
+            <div className="hidden md:flex items-center gap-1.5 rounded-full bg-zinc-900/90 border border-zinc-800 p-1.5 shadow-inner">
               <button
                 onClick={() => setCurrentTab('leaderboard')}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs sm:text-sm font-bold transition-all",
-                  currentTab === 'leaderboard' ? "bg-zinc-800 text-white shadow-md border border-zinc-700/30" : "text-zinc-400 hover:text-zinc-200"
+                  "flex items-center gap-2 rounded-full px-5 py-2 text-xs sm:text-sm font-bold transition-all",
+                  currentTab === 'leaderboard' ? "bg-zinc-800 text-white shadow-md border border-zinc-700/50" : "text-zinc-400 hover:text-zinc-200"
                 )}
               >
-                <Trophy size={14} />
+                <Trophy size={15} />
                 Leaderboard
               </button>
               <button
                 onClick={() => setCurrentTab('analytics')}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs sm:text-sm font-bold transition-all",
-                  currentTab === 'analytics' ? "bg-zinc-800 text-white shadow-md border border-zinc-700/30" : "text-zinc-400 hover:text-zinc-200"
+                  "flex items-center gap-2 rounded-full px-5 py-2 text-xs sm:text-sm font-bold transition-all",
+                  currentTab === 'analytics' ? "bg-zinc-800 text-white shadow-md border border-zinc-700/50" : "text-zinc-400 hover:text-zinc-200"
                 )}
               >
-                <BarChart3 size={14} />
+                <BarChart3 size={15} />
                 Insights & Graphs
               </button>
               <button
                 onClick={() => setCurrentTab('chat')}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs sm:text-sm font-bold transition-all relative",
-                  currentTab === 'chat' ? "bg-blue-600 text-white shadow-md border border-blue-500/30" : "text-zinc-400 hover:text-zinc-200"
+                  "flex items-center gap-2 rounded-full px-5 py-2 text-xs sm:text-sm font-bold transition-all relative",
+                  currentTab === 'chat' ? "bg-blue-600 text-white shadow-md border border-blue-500/40" : "text-zinc-400 hover:text-zinc-200"
                 )}
               >
-                <MessageSquare size={14} />
+                <MessageSquare size={15} />
                 Global Chat
                 <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
               </button>
               <button
                 onClick={() => setIsUpdateLogsOpen(true)}
-                className="flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs sm:text-sm font-bold text-zinc-400 hover:text-white transition-all hover:bg-zinc-800/60"
+                className="flex items-center gap-2 rounded-full px-5 py-2 text-xs sm:text-sm font-bold text-zinc-400 hover:text-white transition-all hover:bg-zinc-800/60"
                 title="View Release Notes & Patch Logs"
               >
-                <Sparkles size={14} className="text-blue-400" />
+                <Sparkles size={15} className="text-blue-400" />
                 Update Logs
               </button>
             </div>
@@ -1501,10 +1596,10 @@ function App() {
               {/* Notification Center Pill */}
               <button
                 onClick={() => setIsNotificationsOpen(true)}
-                className="flex items-center gap-1.5 rounded-full border border-blue-500/40 bg-gradient-to-r from-blue-600/20 to-indigo-600/20 px-3.5 py-1.5 text-xs font-black text-blue-300 transition-all hover:bg-blue-600/30 active:scale-95 shadow-md shadow-blue-950/30 relative"
+                className="flex items-center gap-2 rounded-full border border-blue-500/40 bg-gradient-to-r from-blue-600/20 to-indigo-600/20 px-4 py-2 text-xs font-black text-blue-300 transition-all hover:bg-blue-600/30 active:scale-95 shadow-md shadow-blue-950/30 relative"
                 title="Open Notifications Hub"
               >
-                <Bell size={14} className="text-blue-400" />
+                <Bell size={15} className="text-blue-400" />
                 <span>Alerts</span>
                 {unreadNotificationCount > 0 && (
                   <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-blue-600 text-[10px] font-black text-white px-1 shadow-sm animate-pulse">
@@ -1516,10 +1611,10 @@ function App() {
               {/* Coins & Shop Pill */}
               <button
                 onClick={() => setIsShopOpen(true)}
-                className="flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 px-3.5 py-1.5 text-xs font-black text-amber-300 transition-all hover:bg-amber-500/30 active:scale-95 shadow-md shadow-amber-950/30"
+                className="flex items-center gap-2 rounded-full border border-amber-500/40 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 px-4 py-2 text-xs font-black text-amber-300 transition-all hover:bg-amber-500/30 active:scale-95 shadow-md shadow-amber-950/30"
                 title="Open BloxCoins Shop & Customize"
               >
-                <Coins size={15} className="text-amber-400 fill-amber-400" />
+                <Coins size={16} className="text-amber-400 fill-amber-400" />
                 <span>{userProfileData.coins.toLocaleString()} Coins</span>
               </button>
 
@@ -1527,10 +1622,10 @@ function App() {
               {user && (
                 <button
                   onClick={() => handleOpenDM()}
-                  className="flex items-center gap-1.5 rounded-full border border-violet-500/40 bg-gradient-to-r from-violet-600/20 to-fuchsia-600/20 px-3.5 py-1.5 text-xs font-black text-violet-300 transition-all hover:bg-violet-600/30 active:scale-95 shadow-md shadow-violet-950/30 relative"
+                  className="flex items-center gap-2 rounded-full border border-violet-500/40 bg-gradient-to-r from-violet-600/20 to-fuchsia-600/20 px-4 py-2 text-xs font-black text-violet-300 transition-all hover:bg-violet-600/30 active:scale-95 shadow-md shadow-violet-950/30 relative"
                   title="Open Direct Messages"
                 >
-                  <MessageSquare size={14} className="text-violet-400" />
+                  <MessageSquare size={15} className="text-violet-400" />
                   <span>DMs</span>
                   <span className="flex h-2 w-2 rounded-full bg-violet-400 animate-ping" />
                 </button>
@@ -1540,7 +1635,7 @@ function App() {
                 <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
                   <div 
                     onClick={openProfile}
-                    className="hidden xl:flex items-center gap-2 cursor-pointer group transition-opacity duration-150"
+                    className="hidden xl:flex items-center gap-2.5 cursor-pointer group transition-opacity duration-150 pl-2"
                     title="View Profile & Vote History"
                   >
                     <div className="text-right">
@@ -1550,47 +1645,55 @@ function App() {
                     <img 
                       src={user.photoURL || ''} 
                       alt={user.displayName || ''} 
-                      className="h-8 w-8 rounded-full border-2 border-zinc-800 group-hover:border-blue-500/50 transition-colors object-cover"
+                      className="h-9 w-9 rounded-full border-2 border-zinc-800 group-hover:border-blue-500/50 transition-colors object-cover"
                     />
                   </div>
                   {isAdmin && (
                     <button
                       onClick={() => setIsAdminDashboardOpen(true)}
-                      className="flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-300 transition-all hover:bg-amber-500/20 active:scale-95 shadow-md shadow-amber-900/10"
+                      className="flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-xs font-bold text-amber-300 transition-all hover:bg-amber-500/20 active:scale-95 shadow-md shadow-amber-900/10"
                     >
-                      <Shield size={14} className="text-amber-400" />
+                      <Shield size={15} className="text-amber-400" />
                       <span>Admin Suite</span>
                     </button>
                   )}
                   {userStreak && userStreak.streakCount > 0 && (
                     <button
                       onClick={openProfile}
-                      className="flex items-center gap-1.5 rounded-full border border-orange-500/40 bg-gradient-to-r from-orange-500/20 to-amber-500/20 px-3 py-1.5 text-xs font-black text-orange-400 transition-all hover:bg-orange-500/30 active:scale-95 shadow-md shadow-orange-950/30"
+                      className="flex items-center gap-1.5 rounded-full border border-orange-500/40 bg-gradient-to-r from-orange-500/20 to-amber-500/20 px-3.5 py-2 text-xs font-black text-orange-400 transition-all hover:bg-orange-500/30 active:scale-95 shadow-md shadow-orange-950/30"
                       title="Your Voting Streak"
                     >
-                      <Flame size={14} className="text-orange-400 fill-orange-400 animate-pulse" />
+                      <Flame size={15} className="text-orange-400 fill-orange-400 animate-pulse" />
                       <span>{userStreak.streakCount} {userStreak.streakCount === 1 ? 'Day' : 'Days'} Streak</span>
                     </button>
                   )}
                   <button
                     onClick={openProfile}
-                    className="flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/40 px-3 py-1.5 text-xs sm:text-sm font-bold text-blue-400 transition-all hover:bg-zinc-800 hover:text-blue-300 active:scale-95"
+                    className="flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/60 px-4 py-2 text-xs sm:text-sm font-bold text-blue-400 transition-all hover:bg-zinc-800 hover:text-blue-300 active:scale-95"
                   >
-                    <CircleUser size={15} />
+                    <CircleUser size={16} />
                     <span>My Profile</span>
                   </button>
                   <button
-                    onClick={logout}
-                    className="flex items-center gap-1.5 rounded-full border border-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-400 transition-all hover:bg-zinc-800 hover:text-white active:scale-95"
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/60 px-3.5 py-2 text-xs sm:text-sm font-bold text-zinc-300 transition-all hover:bg-zinc-800 hover:text-white active:scale-95"
+                    title="Account Settings & Display Name"
                   >
-                    <LogOut size={14} />
+                    <SettingsIcon size={16} className="text-blue-400" />
+                    <span>Settings</span>
+                  </button>
+                  <button
+                    onClick={logout}
+                    className="flex items-center gap-2 rounded-full border border-zinc-800 px-3.5 py-2 text-xs font-bold text-zinc-400 transition-all hover:bg-zinc-800 hover:text-white active:scale-95"
+                  >
+                    <LogOut size={15} />
                     <span className="hidden sm:inline">Logout</span>
                   </button>
                 </div>
               ) : (
                 <button
                   onClick={signIn}
-                  className="flex items-center gap-2 rounded-full bg-white px-5 py-2 text-xs sm:text-sm font-bold text-black transition-all hover:bg-zinc-200 active:scale-95"
+                  className="flex items-center gap-2 rounded-full bg-white px-6 py-2.5 text-xs sm:text-sm font-bold text-black transition-all hover:bg-zinc-200 active:scale-95 shadow-lg"
                 >
                   <LogIn size={16} />
                   Sign In with Google
@@ -1601,43 +1704,49 @@ function App() {
         </div>
       </nav>
 
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <main className="mx-auto max-w-7xl px-6 py-10 sm:px-10 sm:py-14 lg:px-12">
         {/* Global Announcement Banner */}
         <AnnouncementBanner announcement={announcement} />
 
         {/* Hero Section */}
         {currentTab !== 'chat' && (
-          <div className="relative mb-8 sm:mb-10 overflow-hidden rounded-2xl sm:rounded-[2.5rem] bg-zinc-900 px-4 py-8 text-center sm:px-12 sm:py-12">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(37,99,235,0.15),transparent_50%)]" />
+          <div className="relative mb-12 sm:mb-16 overflow-hidden rounded-3xl sm:rounded-[3rem] bg-gradient-to-b from-zinc-900/90 via-zinc-900/60 to-zinc-950 border border-zinc-800/80 px-6 py-12 text-center sm:px-16 sm:py-20 shadow-2xl">
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(59,130,246,0.18),transparent_60%)]" />
+            
+            {/* Favicon Watermark Glow Accent */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 opacity-10 pointer-events-none blur-xl">
+              <img src="/favicon.png" alt="" className="w-full h-full object-contain rounded-full" />
+            </div>
+
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="relative z-10"
+              className="relative z-10 max-w-4xl mx-auto"
             >
-              <div className="mb-3 sm:mb-4 inline-flex items-center gap-1.5 sm:gap-2 rounded-full bg-blue-600/10 px-3 py-1 sm:px-4 text-xs sm:text-sm font-bold text-blue-400 border border-blue-500/20">
-                <TrendingUp size={14} className="sm:w-[15px] sm:h-[15px]" />
-                Trending in the Metaverse
+              <div className="mb-4 sm:mb-6 inline-flex items-center gap-2 rounded-full bg-blue-600/15 px-4 py-1.5 text-xs sm:text-sm font-extrabold text-blue-400 border border-blue-500/30 shadow-sm">
+                <TrendingUp size={16} className="text-blue-400" />
+                <span>Trending Roblox Metaverse Leaderboard</span>
               </div>
-              <h1 className="mb-3 sm:mb-4 text-2xl font-black tracking-tight text-white sm:text-5xl md:text-6xl leading-tight">
-                Vote for your <span className="text-blue-500 italic">favorite</span> <br className="hidden sm:block" /> Roblox experience.
+              <h1 className="mb-6 text-3xl font-black tracking-tight text-white sm:text-6xl md:text-7xl leading-[1.15]">
+                Vote for your <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 italic">favorite</span> <br className="hidden sm:block" /> Roblox experiences.
               </h1>
-              <p className="mx-auto mb-6 max-w-2xl text-xs sm:text-base text-zinc-400 leading-relaxed">
-                Discover the most popular games on Roblox, voted by the community. 
-                Earn BloxCoins by voting to buy custom name colors & background themes!
+              <p className="mx-auto mb-10 max-w-2xl text-sm sm:text-lg text-zinc-300/90 leading-relaxed font-normal">
+                Discover top Roblox community creations, cast daily votes, track analytics, 
+                and earn BloxCoins to unlock custom name colors, backgrounds & titles!
               </p>
-              <div className="flex flex-wrap justify-center gap-3 sm:gap-4">
+              <div className="flex flex-wrap justify-center gap-4 sm:gap-6">
                 <button
                   onClick={() => user ? setIsAddModalOpen(true) : signIn()}
-                  className="flex items-center gap-2 rounded-full bg-blue-600 px-5 py-2.5 sm:px-6 sm:py-3 text-xs sm:text-base font-bold text-white shadow-xl shadow-blue-900/20 transition-all hover:bg-blue-500 hover:scale-105 active:scale-95"
+                  className="flex items-center gap-2.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-7 py-3.5 sm:px-8 sm:py-4 text-sm sm:text-base font-bold text-white shadow-xl shadow-blue-900/30 transition-all hover:scale-105 active:scale-95"
                 >
-                  <Plus size={18} className="sm:w-5 sm:h-5" />
+                  <Plus size={20} />
                   Add Your Favorite Game
                 </button>
                 <button
                   onClick={() => setIsShopOpen(true)}
-                  className="flex items-center gap-2 rounded-full bg-amber-500/10 border border-amber-500/30 px-5 py-2.5 sm:px-6 sm:py-3 text-xs sm:text-base font-bold text-amber-300 transition-all hover:bg-amber-500/20 hover:scale-105 active:scale-95"
+                  className="flex items-center gap-2.5 rounded-full bg-amber-500/10 border border-amber-500/40 px-7 py-3.5 sm:px-8 sm:py-4 text-sm sm:text-base font-bold text-amber-300 transition-all hover:bg-amber-500/20 hover:scale-105 active:scale-95 shadow-lg shadow-amber-950/20"
                 >
-                  <ShoppingBag size={18} />
+                  <ShoppingBag size={20} />
                   Open Cosmetic Shop
                 </button>
               </div>
@@ -1703,25 +1812,25 @@ function App() {
               />
 
               {/* Controls */}
-              <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={20} />
+              <div className="mb-12 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+                <div className="relative flex-1 max-w-lg">
+                  <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400" size={22} />
                   <input
                     type="text"
                     placeholder="Search games or creators..."
-                    className="w-full rounded-2xl bg-zinc-900 border border-zinc-800 py-4 pl-12 pr-4 text-white placeholder:text-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all"
+                    className="w-full rounded-2xl bg-zinc-900/90 border border-zinc-800 py-4.5 pl-14 pr-5 text-white placeholder:text-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all text-sm sm:text-base shadow-inner"
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
                   />
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <div className="flex rounded-2xl bg-zinc-900 border border-zinc-800 p-1">
+                <div className="flex items-center gap-3">
+                  <div className="flex rounded-2xl bg-zinc-900/90 border border-zinc-800 p-1.5 shadow-inner">
                     <button
                       onClick={() => setSortBy('votes')}
                       className={cn(
-                        "flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all",
-                        sortBy === 'votes' ? "bg-zinc-800 text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300"
+                        "flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs sm:text-sm font-bold transition-all",
+                        sortBy === 'votes' ? "bg-zinc-800 text-white shadow-md border border-zinc-700/40" : "text-zinc-400 hover:text-zinc-200"
                       )}
                     >
                       <Trophy size={16} />
@@ -1730,8 +1839,8 @@ function App() {
                     <button
                       onClick={() => setSortBy('newest')}
                       className={cn(
-                        "flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all",
-                        sortBy === 'newest' ? "bg-zinc-800 text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300"
+                        "flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs sm:text-sm font-bold transition-all",
+                        sortBy === 'newest' ? "bg-zinc-800 text-white shadow-md border border-zinc-700/40" : "text-zinc-400 hover:text-zinc-200"
                       )}
                     >
                       <Plus size={16} />
@@ -1742,7 +1851,7 @@ function App() {
                   <button
                     onClick={downloadLeaderboardCSV}
                     title="Export Leaderboard CSV"
-                    className="flex items-center gap-2 rounded-2xl bg-zinc-900 border border-zinc-800 px-4 py-3.5 text-sm font-bold text-zinc-400 hover:text-white hover:bg-zinc-850 active:scale-95 transition-all"
+                    className="flex items-center gap-2 rounded-2xl bg-zinc-900/90 border border-zinc-800 px-5 py-3 text-xs sm:text-sm font-bold text-zinc-400 hover:text-white hover:bg-zinc-850 active:scale-95 transition-all shadow-md"
                   >
                     <Download size={16} />
                     <span className="hidden sm:inline">Export CSV</span>
@@ -1752,14 +1861,14 @@ function App() {
 
               {/* Grid */}
               {isLoading ? (
-                <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 xl:grid-cols-3">
+                <div className="grid grid-cols-1 gap-6 sm:gap-8 md:grid-cols-2 xl:grid-cols-3">
                   {[1, 2, 3, 4, 5, 6].map(i => (
-                    <div key={i} className="h-48 animate-pulse rounded-2xl bg-zinc-900/50 border border-zinc-800" />
+                    <div key={i} className="h-56 animate-pulse rounded-3xl bg-zinc-900/50 border border-zinc-800" />
                   ))}
                 </div>
               ) : (
                 <LayoutGroup id="game-grid">
-                  <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-6 sm:gap-8 md:grid-cols-2 xl:grid-cols-3">
                     <AnimatePresence>
                       {filteredGames.map((game, index) => (
                         <GameCard
@@ -1913,6 +2022,22 @@ function App() {
         onDeleteNotification={handleDeleteNotification}
         onClearAll={handleClearAllNotifications}
         onExecuteAction={handleExecuteNotificationAction}
+      />
+
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        user={user}
+        profileData={userProfileData}
+        onUpdateProfile={handleUpdateProfile}
+        onSignOut={logout}
+        soundEnabled={soundEnabled}
+        onToggleSound={() => setSoundEnabled(!soundEnabled)}
+      />
+
+      <BloxVoteLoadingScreen
+        isLoading={isLoading}
+        onFinished={() => setIsLoading(false)}
       />
     </div>
   );

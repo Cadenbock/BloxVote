@@ -79,10 +79,10 @@ export default function GameCard({ game, onVote, hasVoted, onDelete, rank }: Gam
       initial={{ opacity: 0, scale: 0.96 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96 }}
-      className="group relative overflow-hidden rounded-2xl bg-zinc-900/50 border border-zinc-800 p-3.5 sm:p-4 transition-colors duration-200 hover:border-zinc-700 hover:bg-zinc-900/80 shadow-lg min-w-0"
+      className="group relative overflow-hidden rounded-3xl bg-zinc-900/60 border border-zinc-800/90 p-5 sm:p-6 transition-all duration-300 hover:border-zinc-700 hover:bg-zinc-900/95 hover:shadow-2xl hover:shadow-blue-950/20 shadow-xl min-w-0"
     >
       {rank !== undefined && (
-        <div className="absolute top-0 left-0 z-10 flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-br-2xl bg-blue-600 font-extrabold text-white text-xs sm:text-sm shadow-lg overflow-hidden">
+        <div className="absolute top-0 left-0 z-10 flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-br-3xl bg-gradient-to-tr from-blue-600 to-indigo-600 font-extrabold text-white text-xs sm:text-sm shadow-xl overflow-hidden border-b border-r border-blue-400/20">
           <AnimatePresence mode="wait">
             <motion.span
               key={rank}
@@ -97,26 +97,26 @@ export default function GameCard({ game, onVote, hasVoted, onDelete, rank }: Gam
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 min-w-0">
-        <div className="relative h-44 w-full sm:h-28 sm:w-28 md:h-32 md:w-32 shrink-0 overflow-hidden rounded-xl bg-zinc-950">
+      <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 min-w-0">
+        <div className="relative h-48 w-full sm:h-36 sm:w-36 md:h-40 md:w-40 shrink-0 overflow-hidden rounded-2xl bg-zinc-950 shadow-inner">
           <img
             src={game.imageUrl}
             alt={game.name}
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-108"
             referrerPolicy="no-referrer"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
         </div>
 
         <div className="flex flex-1 flex-col justify-between min-w-0 overflow-hidden py-0.5">
-          <div className="min-w-0">
-            <div className="flex items-start justify-between gap-1.5 min-w-0">
-              <h3 className="text-base sm:text-lg font-bold text-white group-hover:text-blue-400 transition-colors line-clamp-1 min-w-0 break-words pr-1">
+          <div className="min-w-0 space-y-2">
+            <div className="flex items-start justify-between gap-2 min-w-0">
+              <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-blue-400 transition-colors line-clamp-1 min-w-0 break-words pr-1">
                 {game.name}
               </h3>
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0">
                 {onDelete && (
-                  <div className="flex items-center gap-1 bg-zinc-950/40 rounded-full px-1.5 py-0.5 border border-zinc-800">
+                  <div className="flex items-center gap-1 bg-zinc-950/60 rounded-full px-2 py-1 border border-zinc-800">
                     <AnimatePresence mode="popLayout">
                       {isConfirmingDelete ? (
                         <motion.div
@@ -126,7 +126,7 @@ export default function GameCard({ game, onVote, hasVoted, onDelete, rank }: Gam
                           exit={{ opacity: 0, scale: 0.8 }}
                           className="flex items-center gap-1.5"
                         >
-                          <span className="text-[9px] font-bold text-rose-400 uppercase tracking-wider pl-1 select-none">
+                          <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider pl-1 select-none">
                             Del?
                           </span>
                           <button
@@ -134,13 +134,13 @@ export default function GameCard({ game, onVote, hasVoted, onDelete, rank }: Gam
                               onDelete(game.id);
                               setIsConfirmingDelete(false);
                             }}
-                            className="rounded-full bg-rose-600 px-1.5 py-0.5 text-[9px] font-bold text-white hover:bg-rose-500 transition-all"
+                            className="rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-rose-500 transition-all"
                           >
                             Yes
                           </button>
                           <button
                             onClick={() => setIsConfirmingDelete(false)}
-                            className="rounded-full bg-zinc-850 px-1.5 py-0.5 text-[9px] font-bold text-zinc-400 hover:bg-zinc-750 hover:text-white transition-all"
+                            className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-bold text-zinc-400 hover:bg-zinc-700 hover:text-white transition-all"
                           >
                             No
                           </button>
@@ -155,7 +155,7 @@ export default function GameCard({ game, onVote, hasVoted, onDelete, rank }: Gam
                           className="rounded-full p-1 text-rose-500 hover:bg-rose-500/10 transition-all"
                           title="Remove Game"
                         >
-                          <Trash2 size={15} />
+                          <Trash2 size={16} />
                         </motion.button>
                       )}
                     </AnimatePresence>
@@ -165,17 +165,17 @@ export default function GameCard({ game, onVote, hasVoted, onDelete, rank }: Gam
                   href={game.robloxUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="rounded-full p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-all shrink-0"
+                  className="rounded-full p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-all shrink-0"
                   title="View on Roblox"
                 >
-                  <ExternalLink size={16} />
+                  <ExternalLink size={18} />
                 </a>
               </div>
             </div>
-            <p className="mt-1 text-xs text-zinc-400 line-clamp-2 leading-relaxed break-words min-w-0">
+            <p className="text-xs sm:text-sm text-zinc-400 line-clamp-2 leading-relaxed break-words min-w-0 font-normal">
               {game.description || "No description provided."}
             </p>
-            <p className="mt-1.5 text-[11px] sm:text-xs font-medium text-zinc-500 uppercase tracking-wider truncate min-w-0">
+            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider truncate min-w-0 pt-0.5">
               By{' '}
               <a
                 href={getCreatorUrl()}
@@ -189,19 +189,19 @@ export default function GameCard({ game, onVote, hasVoted, onDelete, rank }: Gam
             </p>
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 min-w-0 w-full">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 min-w-0 w-full pt-1 border-t border-zinc-800/50">
             <div className="flex items-center gap-2 shrink-0">
-              <div className="flex h-9 items-center gap-1.5 rounded-full bg-zinc-800/60 px-3 border border-zinc-700/50">
+              <div className="flex h-10 items-center gap-2 rounded-full bg-zinc-800/70 px-4 border border-zinc-700/60 shadow-inner">
                 <motion.span 
                   key={game.votes}
                   initial={{ scale: 1.25 }}
                   animate={{ scale: 1 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-                  className={`text-xs sm:text-sm font-extrabold transition-colors ${hasVoted ? 'text-emerald-400' : 'text-blue-400'}`}
+                  className={`text-sm font-black transition-colors ${hasVoted ? 'text-emerald-400' : 'text-blue-400'}`}
                 >
                   {game.votes.toLocaleString()}
                 </motion.span>
-                <span className="text-[10px] sm:text-xs font-medium text-zinc-500 uppercase">Votes</span>
+                <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Votes</span>
               </div>
             </div>
 

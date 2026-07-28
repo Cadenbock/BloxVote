@@ -79,7 +79,7 @@ interface AdminDashboardProps {
   customAdminFonts?: any[];
 }
 
-type AdminTab = 'overview' | 'games' | 'coins' | 'titles' | 'announcement' | 'updates' | 'chat' | 'admins' | 'activity';
+type AdminTab = 'overview' | 'games' | 'coins' | 'bans' | 'titles' | 'announcement' | 'updates' | 'chat' | 'admins' | 'activity';
 
 export default function AdminDashboard({ isOpen, onClose, games, onVote, customAdminTitles = [], customAdminFonts = [] }: AdminDashboardProps) {
   const { toast } = useToast();
@@ -987,6 +987,19 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
               </button>
 
               <button
+                onClick={() => setActiveTab('bans')}
+                className={cn(
+                  'flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold transition-all shrink-0 whitespace-nowrap',
+                  activeTab === 'bans'
+                    ? 'bg-rose-600 text-white shadow-md'
+                    : 'text-rose-400 hover:text-rose-300 hover:bg-zinc-850'
+                )}
+              >
+                <Hammer size={14} />
+                User Bans ({Object.keys(bannedUsersMap).length})
+              </button>
+
+              <button
                 onClick={() => setActiveTab('titles')}
                 className={cn(
                   'flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold transition-all relative shrink-0 whitespace-nowrap',
@@ -1634,6 +1647,147 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
                       </div>
                     )}
                   </div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* BANS & MODERATION TAB */}
+            {activeTab === 'bans' && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-6"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-850 pb-4">
+                  <div>
+                    <h3 className="text-lg font-black text-white flex items-center gap-2">
+                      <Hammer className="text-rose-500" size={20} />
+                      Ban & Player Moderation Suite
+                    </h3>
+                    <p className="text-xs text-zinc-400 mt-1">
+                      Issue temporary or permanent player bans to maintain a safe, friendly community on BloxVote.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 rounded-2xl bg-rose-500/10 border border-rose-500/20 px-3.5 py-2 text-xs font-bold text-rose-300">
+                    <ShieldAlert size={16} />
+                    <span>{Object.keys(bannedUsersMap).length} Active Player Ban(s)</span>
+                  </div>
+                </div>
+
+                {/* Direct Ban Form */}
+                <div className="rounded-3xl border border-rose-500/30 bg-rose-950/10 p-5 sm:p-6 space-y-4">
+                  <h4 className="text-sm font-black text-white flex items-center gap-2">
+                    <Ban size={16} className="text-rose-400" />
+                    Ban Player directly by UID or Display Name
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <input
+                      type="text"
+                      placeholder="Player UID or Username"
+                      value={manualGrantUid}
+                      onChange={(e) => setManualGrantUid(e.target.value)}
+                      className="rounded-2xl bg-zinc-950 border border-zinc-800 px-4 py-2.5 text-xs text-white placeholder-zinc-500 focus:border-rose-500 focus:outline-none"
+                    />
+
+                    <select
+                      value={banDurationMinutes}
+                      onChange={(e) => setBanDurationMinutes(Number(e.target.value))}
+                      className="rounded-2xl bg-zinc-950 border border-zinc-800 px-4 py-2.5 text-xs text-white focus:border-rose-500 focus:outline-none"
+                    >
+                      <option value={30}>30 Minutes</option>
+                      <option value={60}>1 Hour</option>
+                      <option value={720}>12 Hours</option>
+                      <option value={1440}>24 Hours (1 Day)</option>
+                      <option value={10080}>7 Days</option>
+                      <option value={-1}>Permanent Ban (Forever)</option>
+                    </select>
+
+                    <input
+                      type="text"
+                      placeholder="Ban reason (e.g. Inappropriate display name)"
+                      value={banReasonInput}
+                      onChange={(e) => setBanReasonInput(e.target.value)}
+                      className="rounded-2xl bg-zinc-950 border border-zinc-800 px-4 py-2.5 text-xs text-white placeholder-zinc-500 focus:border-rose-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!manualGrantUid.trim()) {
+                          toast('Please enter a UID or username to ban.', 'error');
+                          return;
+                        }
+                        handleBanUser(manualGrantUid.trim(), manualGrantName || manualGrantUid.trim(), banDurationMinutes, banReasonInput);
+                        setManualGrantUid('');
+                        setManualGrantName('');
+                      }}
+                      disabled={!manualGrantUid.trim()}
+                      className="rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-extrabold text-xs px-5 py-2.5 transition-all shadow-lg active:scale-95 disabled:opacity-40 flex items-center gap-1.5"
+                    >
+                      <Hammer size={14} />
+                      <span>Apply Ban Now</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Banned Players List */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-zinc-400">
+                    Currently Banned Accounts ({Object.keys(bannedUsersMap).length})
+                  </h4>
+
+                  {Object.keys(bannedUsersMap).length === 0 ? (
+                    <div className="text-center py-12 border border-dashed border-zinc-800 rounded-2xl bg-zinc-900/20">
+                      <CheckCircle2 size={32} className="text-emerald-500 mx-auto mb-2" />
+                      <p className="text-sm font-bold text-zinc-300">No Banned Players</p>
+                      <p className="text-xs text-zinc-500 mt-1">BloxVote is currently clean and peaceful!</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3">
+                      {Object.values(bannedUsersMap).map((bannedItem: any) => {
+                        const isPerm = bannedItem.bannedUntil === -1;
+                        const expiryDate = isPerm ? 'Permanent' : new Date(bannedItem.bannedUntil).toLocaleString();
+
+                        return (
+                          <div
+                            key={bannedItem.id}
+                            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-rose-500/40 bg-rose-950/20 p-4"
+                          >
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-white text-sm">
+                                  {bannedItem.userDisplayName || 'Player'}
+                                </span>
+                                <span className="text-[10px] bg-zinc-900 text-zinc-400 px-2 py-0.5 rounded-full font-mono">
+                                  UID: {bannedItem.id}
+                                </span>
+                                <span className="bg-rose-500 text-black px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase">
+                                  {isPerm ? 'PERMANENT' : 'TEMPORARY'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-rose-200/90 font-medium">
+                                <strong>Reason:</strong> {bannedItem.banReason || 'Violation of guidelines'}
+                              </p>
+                              <p className="text-[11px] text-zinc-400">
+                                Banned by: {bannedItem.bannedBy || 'Admin'} • Expires: {expiryDate}
+                              </p>
+                            </div>
+
+                            <button
+                              onClick={() => handleUnbanUser(bannedItem.id, bannedItem.userDisplayName)}
+                              className="rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 px-4 py-2 text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 self-start sm:self-center"
+                            >
+                              <CheckCircle2 size={14} /> Unban Player
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}

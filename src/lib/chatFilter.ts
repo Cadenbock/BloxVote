@@ -144,3 +144,32 @@ export function filterChatMessage(input: string, extraCustomWords?: string[]): {
   };
 }
 
+/**
+ * Checks if a string (such as a username) contains profanity or custom censored words.
+ */
+export function containsProfanityOrCensoredWords(text: string, extraCustomWords?: string[]): {
+  isBlocked: boolean;
+  matchedWord?: string;
+} {
+  if (!text) return { isBlocked: false };
+
+  const normalized = normalizeText(text);
+  const allPatterns = Array.from(new Set([
+    ...DEFAULT_PROFANITY_PATTERNS,
+    ...customBannedWords,
+    ...(extraCustomWords || [])
+  ]));
+
+  for (const pattern of allPatterns) {
+    if (!pattern || pattern.length < 2) continue;
+    const escaped = escapeRegExp(pattern);
+    const regex = new RegExp(escaped, 'gi');
+    if (regex.test(normalized) || regex.test(text)) {
+      return { isBlocked: true, matchedWord: pattern };
+    }
+  }
+
+  return { isBlocked: false };
+}
+
+
