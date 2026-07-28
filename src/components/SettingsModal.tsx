@@ -52,6 +52,17 @@ const INAPPROPRIATE_KEYWORDS = [
 ];
 
 const checkAvatarSafety = (input: string, fileName?: string): { safe: boolean; reason?: string } => {
+  // Never test raw base64 data URLs against text keywords (random base64 substrings trigger false positives)
+  if (input.startsWith('data:image/')) {
+    const fn = (fileName || '').toLowerCase();
+    for (const word of INAPPROPRIATE_KEYWORDS) {
+      if (fn.includes(word)) {
+        return { safe: false, reason: `File name contains restricted keyword "${word}"` };
+      }
+    }
+    return { safe: true };
+  }
+
   const combined = (input + ' ' + (fileName || '')).toLowerCase();
   for (const word of INAPPROPRIATE_KEYWORDS) {
     if (combined.includes(word)) {
@@ -59,6 +70,50 @@ const checkAvatarSafety = (input: string, fileName?: string): { safe: boolean; r
     }
   }
   return { safe: true };
+};
+
+const compressImageToDataUrl = (dataUrl: string, maxDim = 160): Promise<string> => {
+  return new Promise((resolve) => {
+    if (!dataUrl.startsWith('data:image/')) {
+      resolve(dataUrl);
+      return;
+    }
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        canvas.width = Math.max(width, 1);
+        canvas.height = Math.max(height, 1);
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.82));
+        } else {
+          resolve(dataUrl);
+        }
+      } catch {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
 };
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -121,15 +176,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const result = event.target?.result as string;
       if (result) {
-        const dataSafety = checkAvatarSafety(result, file.name);
-        if (!dataSafety.safe) {
-          setModerationError('⚠️ Moderation Blocked: Inappropriate content flagged by BloxVote Safety Filter.');
-          return;
-        }
-        setPhotoURL(result);
+        const compressed = await compressImageToDataUrl(result, 160);
+        setPhotoURL(compressed);
       }
     };
     reader.readAsDataURL(file);

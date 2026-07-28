@@ -1383,17 +1383,19 @@ function App() {
     }
 
     try {
-      if (fields.displayName || fields.photoURL) {
+      // Firebase Auth photoURL attribute throws error if string length > 2000
+      const safeAuthPhotoUrl = (fields.photoURL && fields.photoURL.length < 2000) ? fields.photoURL : user.photoURL;
+      if (fields.displayName || fields.photoURL !== undefined) {
         await updateProfile(user, {
           displayName: fields.displayName || user.displayName,
-          photoURL: fields.photoURL || user.photoURL,
+          photoURL: safeAuthPhotoUrl || undefined,
         });
       }
       const userRef = doc(db, 'users', user.uid);
       await setDoc(userRef, {
         displayName: fields.displayName || user.displayName || '',
         displayNameLower: (fields.displayName || user.displayName || '').toLowerCase(),
-        photoURL: fields.photoURL || user.photoURL || '',
+        photoURL: fields.photoURL !== undefined ? fields.photoURL : (user.photoURL || ''),
         bio: fields.bio || '',
       }, { merge: true });
 
