@@ -36,7 +36,6 @@ import AnnouncementBanner from './components/AnnouncementBanner';
 import UpdateLogsModal from './components/UpdateLogsModal';
 import ShopModal from './components/ShopModal';
 import PublicChat from './components/PublicChat';
-import DirectMessagesModal from './components/DirectMessagesModal';
 import NotificationsModal from './components/NotificationsModal';
 import { SettingsModal } from './components/SettingsModal';
 import { BloxVoteLoadingScreen } from './components/BloxVoteLoadingScreen';
@@ -177,8 +176,6 @@ function App() {
   const [userStreak, setUserStreak] = useState<UserStreakData | null>(null);
   const [announcement, setAnnouncement] = useState<GlobalAnnouncement | null>(null);
   const [isUpdateLogsOpen, setIsUpdateLogsOpen] = useState(false);
-  const [isDMOpen, setIsDMOpen] = useState(false);
-  const [dmTargetUser, setDmTargetUser] = useState<{ uid: string; displayName: string; photoURL?: string; color?: string } | null>(null);
   const [previewThemeId, setPreviewThemeId] = useState<string | null>(null);
   const [previewFontId, setPreviewFontId] = useState<string | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -602,55 +599,6 @@ function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // Realtime Listener for Unread DMs => Create DM Notifications
-  useEffect(() => {
-    if (!user) return;
-
-    const convQ = query(
-      collection(db, 'conversations'),
-      where('participantUids', 'array-contains', user.uid)
-    );
-
-    const unsubscribe = onSnapshot(convQ, (snapshot) => {
-      snapshot.forEach(async (docSnap) => {
-        const conv = docSnap.data();
-        const unreadCount = conv.unreadCounts?.[user.uid] || 0;
-        if (unreadCount > 0) {
-          const senderUid = conv.lastMessageSenderUid;
-          if (senderUid && senderUid !== user.uid) {
-            const partner = conv.participants?.[senderUid];
-            const notifId = `dm-${docSnap.id}`;
-
-            const notifData = {
-              type: 'dm',
-              title: `New Direct Message from ${partner?.displayName || 'User'} 💬`,
-              message: conv.lastMessageText || 'You received a new direct message.',
-              timestamp: serverTimestamp(),
-              isRead: false,
-              linkAction: 'open_dm',
-              actionData: {
-                partnerUid: senderUid,
-                partnerName: partner?.displayName,
-                partnerPhoto: partner?.photoURL,
-                partnerColor: partner?.equippedColor,
-              }
-            };
-
-            try {
-              await setDoc(doc(db, 'users', user.uid, 'notifications', notifId), notifData, { merge: true });
-            } catch (err) {
-              console.warn("Error saving DM notification:", err);
-            }
-          }
-        }
-      });
-    }, (err) => {
-      console.warn("Conversations listener warning:", err);
-    });
-
-    return () => unsubscribe();
-  }, [user]);
-
   // Notification Handlers
   const handleMarkNotificationAsRead = async (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
@@ -723,17 +671,7 @@ function App() {
     action?: string,
     data?: { partnerUid?: string; partnerName?: string; partnerPhoto?: string; partnerColor?: string; gameId?: string }
   ) => {
-    if (action === 'open_dm') {
-      if (data?.partnerUid) {
-        setDmTargetUser({
-          uid: data.partnerUid,
-          displayName: data.partnerName || 'User',
-          photoURL: data.partnerPhoto,
-          color: data.partnerColor,
-        });
-      }
-      setIsDMOpen(true);
-    } else if (action === 'open_shop') {
+    if (action === 'open_shop') {
       setIsShopOpen(true);
     } else if (action === 'open_updates') {
       setIsUpdateLogsOpen(true);
@@ -1547,17 +1485,6 @@ function App() {
     toast("Leaderboard CSV downloaded! 📊", "success");
   };
 
-  const handleOpenDM = (targetUser?: { uid: string; displayName: string; photoURL?: string; color?: string }) => {
-    if (!user) {
-      signIn();
-      return;
-    }
-    if (targetUser) {
-      setDmTargetUser(targetUser);
-    }
-    setIsDMOpen(true);
-  };
-
   const filteredGames = games.filter(game => 
     (game.name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
     (game.creator || '').toLowerCase().includes((searchQuery || '').toLowerCase())
@@ -1659,19 +1586,6 @@ function App() {
                 <Coins size={16} className="text-amber-400 fill-amber-400" />
                 <span>{userProfileData.coins.toLocaleString()} Coins</span>
               </button>
-
-              {/* DMs Quick Pill */}
-              {user && (
-                <button
-                  onClick={() => handleOpenDM()}
-                  className="flex items-center gap-2 rounded-full border border-violet-500/40 bg-gradient-to-r from-violet-600/20 to-fuchsia-600/20 px-4 py-2 text-xs font-black text-violet-300 transition-all hover:bg-violet-600/30 active:scale-95 shadow-md shadow-violet-950/30 relative"
-                  title="Open Direct Messages"
-                >
-                  <MessageSquare size={15} className="text-violet-400" />
-                  <span>DMs</span>
-                  <span className="flex h-2 w-2 rounded-full bg-violet-400 animate-ping" />
-                </button>
-              )}
 
               {user ? (
                 <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
@@ -1903,14 +1817,14 @@ function App() {
 
               {/* Grid */}
               {isLoading ? (
-                <div className="grid grid-cols-1 gap-6 sm:gap-8 md:grid-cols-2 xl:grid-cols-3">
+                <div className="grid grid-cols-1 gap-6 sm:gap-8 md:grid-cols-2">
                   {[1, 2, 3, 4, 5, 6].map(i => (
                     <div key={i} className="h-56 animate-pulse rounded-3xl bg-zinc-900/50 border border-zinc-800" />
                   ))}
                 </div>
               ) : (
                 <LayoutGroup id="game-grid">
-                  <div className="grid grid-cols-1 gap-6 sm:gap-8 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-6 sm:gap-8 md:grid-cols-2">
                     <AnimatePresence>
                       {filteredGames.map((game, index) => (
                         <GameCard
@@ -1963,7 +1877,6 @@ function App() {
                 user={user}
                 profileData={userProfileData}
                 isAdmin={isAdmin}
-                onOpenDM={handleOpenDM}
               />
             </motion.div>
           )}
@@ -2044,17 +1957,6 @@ function App() {
         }}
       />
 
-      <DirectMessagesModal
-        isOpen={isDMOpen}
-        onClose={() => {
-          setIsDMOpen(false);
-          setDmTargetUser(null);
-        }}
-        currentUser={user}
-        userProfileData={userProfileData}
-        initialTargetUser={dmTargetUser}
-      />
-
       <NotificationsModal
         isOpen={isNotificationsOpen}
         onClose={() => setIsNotificationsOpen(false)}
@@ -2075,6 +1977,9 @@ function App() {
         onSignOut={logout}
         soundEnabled={soundEnabled}
         onToggleSound={() => setSoundEnabled(!soundEnabled)}
+        customAdminFonts={customAdminFonts}
+        onEquipFont={async (fontId) => { await handleEquipItem('font', fontId); }}
+        onSaveCustomFont={handleSaveCustomFont}
       />
 
       <BloxVoteLoadingScreen

@@ -21,12 +21,16 @@ import {
   AlertTriangle,
   ShieldAlert,
   Trash2,
-  Clock
+  Clock,
+  Type,
+  Plus,
+  RefreshCw
 } from 'lucide-react';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 import { db } from '../firebase';
-import { UserProfileData } from '../types';
+import { UserProfileData, AdminCustomFont, CustomFontConfig } from '../types';
+import { FONT_ITEMS, getFontItemStyle } from '../lib/shopData';
 import { containsProfanityOrCensoredWords } from '../lib/chatFilter';
 
 interface SettingsModalProps {
@@ -38,6 +42,9 @@ interface SettingsModalProps {
   onSignOut: () => Promise<void>;
   soundEnabled?: boolean;
   onToggleSound?: () => void;
+  customAdminFonts?: AdminCustomFont[];
+  onEquipFont?: (fontId: string) => Promise<void>;
+  onSaveCustomFont?: (config: CustomFontConfig) => Promise<boolean>;
 }
 
 const PRESET_AVATARS = [
@@ -128,6 +135,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onSignOut,
   soundEnabled = true,
   onToggleSound,
+  customAdminFonts = [],
+  onEquipFont,
+  onSaveCustomFont,
 }) => {
   const [displayName, setDisplayName] = useState('');
   const [photoURL, setPhotoURL] = useState('');
@@ -136,8 +146,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [moderationError, setModerationError] = useState<string | null>(null);
   const [copiedUid, setCopiedUid] = useState(false);
-  const [activeTab, setActiveTab] = useState<'account' | 'preferences'>('account');
+  const [activeTab, setActiveTab] = useState<'account' | 'fonts' | 'preferences'>('account');
   const [pendingAvatarReq, setPendingAvatarReq] = useState<any>(null);
+  const [customFontFamily, setCustomFontFamily] = useState('');
+  const [customFontName, setCustomFontName] = useState('');
+  const [isSavingFont, setIsSavingFont] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -296,7 +309,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             {/* Navigation Tabs */}
-            <div className="flex gap-2 mt-6">
+            <div className="flex gap-2 mt-6 flex-wrap">
               <button
                 onClick={() => setActiveTab('account')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
@@ -307,6 +320,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               >
                 <UserIcon size={14} />
                 Profile & Account
+              </button>
+              <button
+                onClick={() => setActiveTab('fonts')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === 'fonts'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'bg-zinc-900/80 text-zinc-400 hover:text-white border border-zinc-800'
+                }`}
+              >
+                <Type size={14} />
+                App Fonts
               </button>
               <button
                 onClick={() => setActiveTab('preferences')}
@@ -588,6 +612,187 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </button>
                 </div>
               </form>
+            )}
+
+            {activeTab === 'fonts' && (
+              <div className="space-y-6">
+                {/* Equipped Font Status */}
+                <div className="rounded-2xl border border-blue-500/30 bg-gradient-to-r from-blue-950/40 via-indigo-950/20 to-zinc-950 p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Type size={14} /> Currently Equipped App Font
+                    </span>
+                    <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
+                      Active
+                    </span>
+                  </div>
+                  {(() => {
+                    const equippedStyle = getFontItemStyle(profileData.equippedFont, customAdminFonts as any, profileData.customFontConfig);
+                    return (
+                      <div className="p-4 rounded-xl bg-zinc-950/90 border border-zinc-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-base font-black text-white">{equippedStyle.name}</h4>
+                          <span className="text-xs font-mono text-zinc-400">{equippedStyle.fontFamily}</span>
+                        </div>
+                        <div 
+                          className="p-3 rounded-lg bg-zinc-900 border border-zinc-800 text-center text-sm font-bold text-amber-300"
+                          style={{ fontFamily: equippedStyle.fontFamily }}
+                        >
+                          {equippedStyle.sampleText || 'ROBLOX VOTER 2026'}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Fonts Grid */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-black text-white flex items-center gap-2">
+                    <Sparkles size={16} className="text-amber-400" />
+                    Available App Fonts
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {FONT_ITEMS.map((font) => {
+                      const isEquipped = profileData.equippedFont === font.id;
+                      const fontStyle = getFontItemStyle(font.id);
+                      return (
+                        <div key={font.id} className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 space-y-3 flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <h4 className="text-sm font-black text-white">{font.name}</h4>
+                              <span className="text-[10px] font-bold text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded-md">
+                                {font.id === 'default' ? 'Default' : 'System Font'}
+                              </span>
+                            </div>
+                            <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800/80 text-center text-xs font-bold text-amber-300" style={{ fontFamily: fontStyle.fontFamily }}>
+                              {font.sampleText || 'ROBLOX VOTER 2026'}
+                            </div>
+                          </div>
+                          <div className="flex justify-end pt-1">
+                            {isEquipped ? (
+                              <span className="rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-4 py-1.5 text-xs font-black">
+                                Equipped ✓
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => onEquipFont && onEquipFont(font.id)}
+                                className="rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 text-xs font-black transition-all active:scale-95"
+                              >
+                                Equip Font
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Admin Custom Fonts */}
+                    {customAdminFonts && customAdminFonts.map((adminFont) => {
+                      const isEquipped = profileData.equippedFont === adminFont.id;
+                      const fontStyle = getFontItemStyle(adminFont.id, customAdminFonts as any);
+                      return (
+                        <div key={adminFont.id} className="rounded-2xl border border-purple-500/30 bg-purple-950/20 p-4 space-y-3 flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <h4 className="text-sm font-black text-white">{adminFont.name}</h4>
+                              <span className="text-[10px] font-bold text-purple-300 bg-purple-900/50 px-2 py-0.5 rounded-md">
+                                Admin Special
+                              </span>
+                            </div>
+                            <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800/80 text-center text-xs font-bold text-amber-300" style={{ fontFamily: fontStyle.fontFamily }}>
+                              {fontStyle.sampleText || 'ROBLOX VOTER 2026'}
+                            </div>
+                          </div>
+                          <div className="flex justify-end pt-1">
+                            {isEquipped ? (
+                              <span className="rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-4 py-1.5 text-xs font-black">
+                                Equipped ✓
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => onEquipFont && onEquipFont(adminFont.id)}
+                                className="rounded-xl bg-purple-600 hover:bg-purple-500 text-white px-4 py-1.5 text-xs font-black transition-all active:scale-95"
+                              >
+                                Equip Font
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Custom Font Studio */}
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-black text-white flex items-center gap-2">
+                        <Type size={16} className="text-indigo-400" />
+                        Custom Font Studio
+                      </h3>
+                      <p className="text-xs text-zinc-400 mt-0.5">Enter any web font family name (e.g. 'Fredoka', 'Cinzel', 'Courier New', 'Bungee') to apply to your app.</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[11px] font-bold text-zinc-300 block mb-1">Font Family Name or CSS Stack</label>
+                      <input
+                        type="text"
+                        value={customFontFamily}
+                        onChange={(e) => setCustomFontFamily(e.target.value)}
+                        placeholder="e.g. 'Fredoka', sans-serif"
+                        className="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3.5 py-2 text-xs text-white focus:border-blue-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-zinc-300 block mb-1">Display Label</label>
+                      <input
+                        type="text"
+                        value={customFontName}
+                        onChange={(e) => setCustomFontName(e.target.value)}
+                        placeholder="e.g. My Favorite Gamer Font"
+                        className="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3.5 py-2 text-xs text-white focus:border-blue-500 focus:outline-none"
+                      />
+                    </div>
+
+                    {/* Preview Box */}
+                    {customFontFamily.trim() && (
+                      <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-center text-sm font-bold text-amber-300" style={{ fontFamily: customFontFamily }}>
+                        ROBLOX VOTER 2026 - SAMPLE TEXT PREVIEW
+                      </div>
+                    )}
+
+                    <div className="flex justify-end pt-2">
+                      <button
+                        type="button"
+                        disabled={isSavingFont || !customFontFamily.trim()}
+                        onClick={async () => {
+                          if (!onSaveCustomFont) return;
+                          setIsSavingFont(true);
+                          try {
+                            await onSaveCustomFont({
+                              name: customFontName.trim() || 'Custom Font',
+                              fontFamily: customFontFamily.trim(),
+                              sampleText: 'ROBLOX VOTER 2026'
+                            });
+                          } finally {
+                            setIsSavingFont(false);
+                          }
+                        }}
+                        className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2 text-xs font-bold text-white shadow-md hover:scale-105 transition-all disabled:opacity-50"
+                      >
+                        {isSavingFont ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+                        <span>Save & Equip Custom Font</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             )}
 
             {activeTab === 'preferences' && (

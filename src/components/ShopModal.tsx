@@ -415,17 +415,6 @@ export default function ShopModal({
               Background Themes
             </button>
             <button
-              onClick={() => setActiveTab('fonts')}
-              className={`flex items-center gap-2.5 py-4 px-6 font-extrabold text-sm border-b-2 transition-all shrink-0 ${
-                activeTab === 'fonts'
-                  ? 'border-amber-500 text-amber-400'
-                  : 'border-transparent text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              <Type size={18} />
-              App Fonts
-            </button>
-            <button
               onClick={() => setActiveTab('earn')}
               className={`flex items-center gap-2.5 py-4 px-6 font-extrabold text-sm border-b-2 transition-all shrink-0 ${
                 activeTab === 'earn'
@@ -923,51 +912,6 @@ export default function ShopModal({
                       );
                     })}
                   </div>
-                </div>
-              </div>
-            )}
-
-            {/* FONTS TAB */}
-            {activeTab === 'fonts' && (
-              <div className="space-y-8">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {FONT_ITEMS.map(font => {
-                    const isOwned = purchasedFonts.includes(font.id) || font.price === 0;
-                    const isEquipped = profileData.equippedFont === font.id;
-                    const fontStyle = getFontItemStyle(font.id);
-
-                    return (
-                      <div key={font.id} className="rounded-3xl border border-zinc-800 bg-zinc-900/60 p-6 space-y-4">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-base font-black text-white">{font.name}</h4>
-                          <span className="text-xs font-extrabold text-amber-300">{font.price === 0 ? 'FREE' : `${font.price.toLocaleString()} Coins`}</span>
-                        </div>
-
-                        <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 text-center text-sm font-bold text-amber-300" style={{ fontFamily: fontStyle.fontFamily }}>
-                          {font.sampleText || 'ROBLOX VOTER 2026'}
-                        </div>
-
-                        <div className="flex justify-end pt-2">
-                          {isOwned ? (
-                            <button
-                              onClick={() => handleEquip('font', isEquipped ? 'default' : font.id)}
-                              className={`rounded-xl px-5 py-2 text-xs font-black ${isEquipped ? 'bg-emerald-500 text-black' : 'bg-zinc-800 text-white'}`}
-                            >
-                              {isEquipped ? 'Equipped ✓' : 'Equip Font'}
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleBuy('font', font)}
-                              disabled={profileData.coins < font.price}
-                              className="rounded-xl bg-amber-500 px-5 py-2 text-xs font-black text-black hover:bg-amber-400 transition-all disabled:opacity-40"
-                            >
-                              Buy Font
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
                 </div>
               </div>
             )}

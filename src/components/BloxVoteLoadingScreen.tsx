@@ -37,12 +37,10 @@ export const BloxVoteLoadingScreen: React.FC<BloxVoteLoadingScreenProps> = ({
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isLoading) {
-      setProgress(0);
-      setStageIndex(0);
       setIsFinishedInternal(false);
 
-      const duration = 10000; // 10 seconds loading screen duration
-      const stepTime = 50;
+      const duration = 2200; // 2.2 seconds complete loading screen duration
+      const stepTime = 40;
       const totalSteps = duration / stepTime;
       let currentStep = 0;
 
@@ -62,9 +60,29 @@ export const BloxVoteLoadingScreen: React.FC<BloxVoteLoadingScreenProps> = ({
           setTimeout(() => {
             setIsFinishedInternal(true);
             if (onFinished) onFinished();
-          }, 300);
+          }, 350);
         }
       }, stepTime);
+    } else {
+      // Rapidly complete progress to 100% when backend finishes loading
+      if (!isFinishedInternal) {
+        let currentPct = progress;
+        interval = setInterval(() => {
+          currentPct += 15;
+          if (currentPct >= 100) {
+            currentPct = 100;
+            setProgress(100);
+            setStageIndex(BLOXVOTE_STAGES.length - 1);
+            clearInterval(interval);
+            setTimeout(() => {
+              setIsFinishedInternal(true);
+              if (onFinished) onFinished();
+            }, 350);
+          } else {
+            setProgress(currentPct);
+          }
+        }, 30);
+      }
     }
 
     return () => clearInterval(interval);
@@ -78,7 +96,7 @@ export const BloxVoteLoadingScreen: React.FC<BloxVoteLoadingScreenProps> = ({
     return () => clearInterval(tipInterval);
   }, []);
 
-  if (!isLoading || isFinishedInternal) return null;
+  if (isFinishedInternal) return null;
 
   return (
     <AnimatePresence>

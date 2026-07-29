@@ -23,7 +23,6 @@ interface PublicChatProps {
   user: User | null;
   profileData: UserProfileData;
   isAdmin: boolean;
-  onOpenDM?: (targetUser: { uid: string; displayName: string; photoURL?: string; color?: string }) => void;
 }
 
 interface BanInfo {
@@ -34,7 +33,7 @@ interface BanInfo {
 
 const QUICK_EMOJIS = ['👋', '🎮', '🔥', '🏆', '🪙', '❤️', '🚀', '💯', '✨'];
 
-export default function PublicChat({ user, profileData, isAdmin, onOpenDM }: PublicChatProps) {
+export default function PublicChat({ user, profileData, isAdmin }: PublicChatProps) {
   const [messages, setMessages] = useState<PublicChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -304,16 +303,6 @@ export default function PublicChat({ user, profileData, isAdmin, onOpenDM }: Pub
                       {msg.senderDisplayName}
                     </span>
                     <span className="text-[10px] text-zinc-500">{formattedTime}</span>
-                    {!isMe && user && onOpenDM && (
-                      <button
-                        onClick={() => onOpenDM({ uid: msg.senderUid, displayName: msg.senderDisplayName, photoURL: msg.senderPhotoURL, color: msg.senderColor })}
-                        className="text-zinc-500 hover:text-violet-400 transition-colors p-0.5 flex items-center gap-1 text-[10px] font-bold ml-1 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/20 px-1.5 rounded-md"
-                        title={`Send Direct Message to ${msg.senderDisplayName}`}
-                      >
-                        <MessageSquare size={11} className="text-violet-400" />
-                        <span className="hidden sm:inline">DM</span>
-                      </button>
-                    )}
                     {(isMe || isAdmin) && (
                       <button
                         onClick={() => handleDeleteMessage(msg.id)}
