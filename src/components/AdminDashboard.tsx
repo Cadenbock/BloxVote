@@ -49,7 +49,8 @@ import {
   Ban,
   ShieldAlert,
   XCircle,
-  Award
+  Award,
+  Camera
 } from 'lucide-react';
 import {
   BarChart,
@@ -64,7 +65,7 @@ import {
   Pie
 } from 'recharts';
 import { db, auth } from '../firebase';
-import { Game, Activity, AdminUser, AdminChatMessage, UpdateLog, ChatFlag, CustomTitleRequest } from '../types';
+import { Game, Activity, AdminUser, AdminChatMessage, UpdateLog, ChatFlag, CustomTitleRequest, AvatarRequest } from '../types';
 import { useToast } from './Toast';
 import { logActivity } from '../lib/activity';
 import { cn } from '../lib/utils';
@@ -79,7 +80,7 @@ interface AdminDashboardProps {
   customAdminFonts?: any[];
 }
 
-type AdminTab = 'overview' | 'games' | 'coins' | 'bans' | 'titles' | 'announcement' | 'updates' | 'chat' | 'admins' | 'activity';
+type AdminTab = 'overview' | 'games' | 'coins' | 'bans' | 'avatars' | 'titles' | 'announcement' | 'updates' | 'chat' | 'admins' | 'activity';
 
 export default function AdminDashboard({ isOpen, onClose, games, onVote, customAdminTitles = [], customAdminFonts = [] }: AdminDashboardProps) {
   const { toast } = useToast();
@@ -93,6 +94,12 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
   const [declineModalReq, setDeclineModalReq] = useState<CustomTitleRequest | null>(null);
   const [declineReason, setDeclineReason] = useState<string>('Title violates community guidelines or contains inappropriate words.');
   const [isProcessingTitleReq, setIsProcessingTitleReq] = useState<string | null>(null);
+
+  // Avatar Requests State
+  const [avatarRequests, setAvatarRequests] = useState<AvatarRequest[]>([]);
+  const [declineAvatarModalReq, setDeclineAvatarModalReq] = useState<AvatarRequest | null>(null);
+  const [declineAvatarReason, setDeclineAvatarReason] = useState<string>('Avatar image violates community guidelines.');
+  const [isProcessingAvatarReq, setIsProcessingAvatarReq] = useState<string | null>(null);
 
   // User Coins & Economy State
   const [userProfiles, setUserProfiles] = useState<any[]>([]);
@@ -271,6 +278,104 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
       toast(`Failed to decline title: ${err.message}`, 'error');
     } finally {
       setIsProcessingTitleReq(null);
+    }
+  };
+
+  // Real-time Avatar Requests Listener
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const reqQuery = query(collection(db, 'avatarRequests'), orderBy('requestedAt', 'desc'), limit(50));
+    const unsubscribe = onSnapshot(reqQuery, (snapshot) => {
+      const list = snapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      } as AvatarRequest));
+      setAvatarRequests(list);
+    }, (err) => {
+      console.warn('Avatar requests listener warning:', err);
+    });
+
+    return () => unsubscribe();
+  }, [isOpen]);
+
+  const handleAcceptAvatarRequest = async (req: AvatarRequest) => {
+    setIsProcessingAvatarReq(req.id);
+    try {
+      // 1. Update request status to accepted
+      await updateDoc(doc(db, 'avatarRequests', req.id), {
+        status: 'accepted',
+        reviewedAt: serverTimestamp(),
+        reviewedBy: currentUser?.email || 'Admin'
+      });
+
+      // 2. Set user photoURL in users collection
+      const userRef = doc(db, 'users', req.userId);
+      await updateDoc(userRef, {
+        photoURL: req.requestedPhotoURL
+      });
+
+      // 3. Send notification to user
+      await addDoc(collection(db, 'users', req.userId, 'notifications'), {
+        title: 'Avatar Image Approved! 🎉',
+        message: `Your requested custom avatar image has been APPROVED by admins and published to your profile!`,
+        type: 'system',
+        read: false,
+        timestamp: serverTimestamp()
+      });
+
+      await logActivity(
+        'approve_avatar',
+        'Approved Avatar Request',
+        `Approved avatar image request for ${req.userDisplayName}`
+      );
+
+      toast(`Approved avatar request for ${req.userDisplayName}!`, 'success');
+    } catch (err: any) {
+      console.error('Failed to accept avatar request:', err);
+      toast(`Failed to accept avatar: ${err.message}`, 'error');
+    } finally {
+      setIsProcessingAvatarReq(null);
+    }
+  };
+
+  const handleDeclineAvatarRequest = async () => {
+    if (!declineAvatarModalReq) return;
+    const req = declineAvatarModalReq;
+    const reason = declineAvatarReason.trim() || 'Violated community guidelines.';
+    setIsProcessingAvatarReq(req.id);
+
+    try {
+      // 1. Update request status to declined
+      await updateDoc(doc(db, 'avatarRequests', req.id), {
+        status: 'declined',
+        rejectionReason: reason,
+        reviewedAt: serverTimestamp(),
+        reviewedBy: currentUser?.email || 'Admin'
+      });
+
+      // 2. Send notification to user
+      await addDoc(collection(db, 'users', req.userId, 'notifications'), {
+        title: 'Avatar Request Declined ⚠️',
+        message: `Your requested avatar image was declined by an admin. Reason: ${reason}`,
+        type: 'system',
+        read: false,
+        timestamp: serverTimestamp()
+      });
+
+      await logActivity(
+        'decline_avatar',
+        'Declined Avatar Request',
+        `Declined avatar image request for ${req.userDisplayName}. Reason: ${reason}`
+      );
+
+      toast(`Declined avatar request for ${req.userDisplayName}`, 'info');
+      setDeclineAvatarModalReq(null);
+    } catch (err: any) {
+      console.error('Failed to decline avatar request:', err);
+      toast(`Failed to decline avatar: ${err.message}`, 'error');
+    } finally {
+      setIsProcessingAvatarReq(null);
     }
   };
 
@@ -997,6 +1102,24 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
               >
                 <Hammer size={14} />
                 User Bans ({Object.keys(bannedUsersMap).length})
+              </button>
+
+              <button
+                onClick={() => setActiveTab('avatars')}
+                className={cn(
+                  'flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold transition-all relative shrink-0 whitespace-nowrap',
+                  activeTab === 'avatars'
+                    ? 'bg-sky-500 text-black shadow-md'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-850'
+                )}
+              >
+                <Camera size={14} />
+                Avatar Requests
+                {avatarRequests.filter(r => r.status === 'pending').length > 0 && (
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-sky-500 text-[10px] font-black text-black">
+                    {avatarRequests.filter(r => r.status === 'pending').length}
+                  </span>
+                )}
               </button>
 
               <button
@@ -1787,6 +1910,158 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
                         );
                       })}
                     </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* AVATAR REQUESTS TAB */}
+            {activeTab === 'avatars' && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-6"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-850 pb-4">
+                  <div>
+                    <h3 className="text-lg font-black text-white flex items-center gap-2">
+                      <Camera className="text-sky-400" size={20} />
+                      Avatar Image Moderation & Approvals
+                    </h3>
+                    <p className="text-xs text-zinc-400 mt-1">
+                      Review custom user avatar image uploads before they appear publicly across BloxVote. Accept to publish to their profile, or Decline to reject.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-sky-500/10 border border-sky-500/20 px-3 py-1.5 text-xs font-bold text-sky-400 flex items-center gap-1.5">
+                      <Clock size={14} />
+                      <span>{avatarRequests.filter(r => r.status === 'pending').length} Pending</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Avatar Requests List */}
+                <div className="space-y-3">
+                  {avatarRequests.length === 0 ? (
+                    <div className="text-center py-16 border border-dashed border-zinc-800 rounded-3xl bg-zinc-900/20">
+                      <Camera size={40} className="text-zinc-600 mx-auto mb-3" />
+                      <h4 className="text-sm font-bold text-zinc-300">No Avatar Requests</h4>
+                      <p className="text-xs text-zinc-500 mt-1 max-w-md mx-auto">
+                        When players upload custom profile pictures, they will appear here for admin review!
+                      </p>
+                    </div>
+                  ) : (
+                    avatarRequests.map((req: AvatarRequest) => {
+                      const isPending = req.status === 'pending';
+                      const isAccepted = req.status === 'accepted';
+                      const isDeclined = req.status === 'declined';
+                      const isProcessing = isProcessingAvatarReq === req.id;
+
+                      return (
+                        <div
+                          key={req.id}
+                          className={`relative overflow-hidden rounded-2xl border p-4 sm:p-5 transition-all ${
+                            isPending
+                              ? 'border-sky-500/50 bg-sky-950/20 shadow-lg shadow-sky-950/20'
+                              : isAccepted
+                              ? 'border-emerald-500/30 bg-emerald-950/10'
+                              : 'border-zinc-800 bg-zinc-900/30'
+                          }`}
+                        >
+                          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                            <div className="space-y-3 min-w-0 flex-1">
+                              <div className="flex items-center gap-2.5 flex-wrap">
+                                <span className="text-sm font-black text-white">
+                                  {req.userDisplayName}
+                                </span>
+                                <span className="text-[11px] font-mono text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded-full">
+                                  UID: {req.userId}
+                                </span>
+                                {isPending && (
+                                  <span className="bg-sky-500/20 text-sky-300 border border-sky-500/40 text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                                    <Clock size={12} /> Pending Review
+                                  </span>
+                                )}
+                                {isAccepted && (
+                                  <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                                    <CheckCircle2 size={12} /> Approved
+                                  </span>
+                                )}
+                                {isDeclined && (
+                                  <span className="bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                                    <XCircle size={12} /> Declined
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Image Comparison */}
+                              <div className="flex items-center gap-4 bg-zinc-950/80 p-3 rounded-2xl border border-zinc-800 w-fit">
+                                <div className="text-center">
+                                  <p className="text-[10px] font-bold text-zinc-400 mb-1">Current Avatar</p>
+                                  <img
+                                    src={req.userPhotoURL || '/favicon.png'}
+                                    alt="Current"
+                                    className="w-14 h-14 rounded-full object-cover border border-zinc-700 bg-zinc-900"
+                                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/favicon.png'; }}
+                                  />
+                                </div>
+
+                                <div className="text-zinc-500 text-lg font-bold">➔</div>
+
+                                <div className="text-center">
+                                  <p className="text-[10px] font-bold text-sky-400 mb-1">Requested Avatar</p>
+                                  <div className="relative group cursor-pointer">
+                                    <img
+                                      src={req.requestedPhotoURL}
+                                      alt="Requested Avatar"
+                                      className="w-16 h-16 rounded-full object-cover border-2 border-sky-400 bg-zinc-900 shadow-md group-hover:scale-105 transition-all"
+                                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/favicon.png'; }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+
+                              {isDeclined && req.rejectionReason && (
+                                <p className="text-xs text-rose-300 font-medium">
+                                  <strong>Rejection Reason:</strong> {req.rejectionReason}
+                                </p>
+                              )}
+
+                              <p className="text-[10px] text-zinc-500">
+                                Submitted: {req.requestedAt ? new Date(req.requestedAt.seconds ? req.requestedAt.seconds * 1000 : req.requestedAt).toLocaleString() : 'Recently'}
+                                {req.reviewedBy && ` • Reviewed by: ${req.reviewedBy}`}
+                              </p>
+                            </div>
+
+                            {/* Action Buttons */}
+                            {isPending && (
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleAcceptAvatarRequest(req)}
+                                  disabled={isProcessing}
+                                  className="rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2.5 transition-all shadow-md active:scale-95 disabled:opacity-50 flex items-center gap-1.5"
+                                >
+                                  <CheckCircle2 size={14} />
+                                  <span>Approve Avatar</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setDeclineAvatarModalReq(req)}
+                                  disabled={isProcessing}
+                                  className="rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 text-xs font-bold px-4 py-2.5 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1.5"
+                                >
+                                  <XCircle size={14} />
+                                  <span>Decline</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </motion.div>
@@ -3259,6 +3534,91 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
                     >
                       <XCircle size={15} />
                       Confirm & Refund
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Modal: Decline Avatar Request */}
+        <AnimatePresence>
+          {declineAvatarModalReq && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setDeclineAvatarModalReq(null)}
+                className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+              />
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 15 }}
+                className="relative z-10 w-full max-w-md rounded-3xl border border-sky-500/30 bg-zinc-950 p-6 shadow-2xl"
+              >
+                <div className="flex items-center justify-between border-b border-zinc-800 pb-4 mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                      <XCircle size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-white">Decline Avatar Request</h3>
+                      <p className="text-xs text-zinc-400">
+                        Player: <span className="text-sky-300 font-bold">{declineAvatarModalReq.userDisplayName}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setDeclineAvatarModalReq(null)}
+                    className="p-1 rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-900"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 text-xs flex items-center gap-3">
+                    <span className="text-zinc-400">Requested Avatar:</span>
+                    <img
+                      src={declineAvatarModalReq.requestedPhotoURL}
+                      alt="Requested"
+                      className="w-10 h-10 rounded-full object-cover border border-sky-400"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-zinc-300">
+                      Reason for Rejection (sent to user notification)
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={declineAvatarReason}
+                      onChange={(e) => setDeclineAvatarReason(e.target.value)}
+                      placeholder="e.g. Image contains explicit or inappropriate content..."
+                      className="w-full rounded-2xl bg-zinc-900 border border-zinc-800 p-3 text-xs text-white placeholder-zinc-600 focus:border-sky-500 focus:outline-none transition-all resize-none"
+                    />
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setDeclineAvatarModalReq(null)}
+                      className="flex-1 rounded-2xl border border-zinc-800 bg-zinc-900 py-3 text-xs font-bold text-zinc-300 hover:bg-zinc-850 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeclineAvatarRequest}
+                      className="flex-1 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white py-3 text-xs font-black shadow-lg shadow-rose-950/50 transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                    >
+                      <XCircle size={15} />
+                      Confirm Decline
                     </button>
                   </div>
                 </div>

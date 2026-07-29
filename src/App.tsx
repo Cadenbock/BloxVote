@@ -228,11 +228,14 @@ function App() {
 
     // Sync user email & displayName to Firestore document for player search
     if (user.email || user.displayName) {
-      setDoc(userRef, {
+      const syncData: any = {
         email: user.email || '',
         displayName: user.displayName || 'Player',
-        photoURL: user.photoURL || ''
-      }, { merge: true }).catch(console.error);
+      };
+      if (user.photoURL) {
+        syncData.photoURL = user.photoURL;
+      }
+      setDoc(userRef, syncData, { merge: true }).catch(console.error);
     }
 
     const unsubscribe = onSnapshot(userRef, (snapshot) => {
@@ -1383,23 +1386,60 @@ function App() {
     }
 
     try {
-      // Firebase Auth photoURL attribute throws error if string length > 2000
-      const safeAuthPhotoUrl = (fields.photoURL && fields.photoURL.length < 2000) ? fields.photoURL : user.photoURL;
+      const currentPhotoUrl = userProfileData.photoURL || user.photoURL || '';
+      const newPhotoUrl = fields.photoURL?.trim();
+      const isNewPhoto = Boolean(newPhotoUrl && newPhotoUrl !== currentPhotoUrl);
+
+      let photoUrlToSave = currentPhotoUrl;
+      let requestedAvatarPending = false;
+
+      if (isNewPhoto) {
+        // Submit an avatar review request to admins for moderation
+        await addDoc(collection(db, 'avatarRequests'), {
+          userId: user.uid,
+          userDisplayName: fields.displayName || user.displayName || 'Player',
+          userEmail: user.email || '',
+          userPhotoURL: currentPhotoUrl,
+          requestedPhotoURL: newPhotoUrl,
+          status: 'pending',
+          requestedAt: serverTimestamp()
+        });
+
+        await logActivity(
+          'avatar_request',
+          'Submitted Avatar Request',
+          `${fields.displayName || user.displayName || 'Player'} submitted a custom avatar image for admin review.`
+        );
+
+        requestedAvatarPending = true;
+        photoUrlToSave = currentPhotoUrl;
+      } else if (fields.photoURL === '') {
+        photoUrlToSave = '';
+      }
+
+      // Firebase Auth photoURL attribute throws 400 error if string is data: URI or length > 2000 or invalid URL scheme
+      const isHttpUrl = photoUrlToSave && (photoUrlToSave.startsWith('http://') || photoUrlToSave.startsWith('https://')) && photoUrlToSave.length < 2000;
+      const safeAuthPhotoUrl = isHttpUrl ? photoUrlToSave : (user.photoURL && (user.photoURL.startsWith('http://') || user.photoURL.startsWith('https://')) ? user.photoURL : null);
+
       if (fields.displayName || fields.photoURL !== undefined) {
         await updateProfile(user, {
           displayName: fields.displayName || user.displayName,
-          photoURL: safeAuthPhotoUrl || undefined,
+          photoURL: safeAuthPhotoUrl,
         });
       }
       const userRef = doc(db, 'users', user.uid);
       await setDoc(userRef, {
         displayName: fields.displayName || user.displayName || '',
         displayNameLower: (fields.displayName || user.displayName || '').toLowerCase(),
-        photoURL: fields.photoURL !== undefined ? fields.photoURL : (user.photoURL || ''),
+        photoURL: photoUrlToSave,
         bio: fields.bio || '',
       }, { merge: true });
 
-      toast("Account settings & display profile updated! ✨", "success");
+      if (requestedAvatarPending) {
+        toast("Avatar submitted for Admin Review! 🛡️ Display name & bio were saved.", "info");
+      } else {
+        toast("Account settings & display profile updated! ✨", "success");
+      }
       return true;
     } catch (err) {
       console.error("Failed to update user profile:", err);
@@ -1645,7 +1685,7 @@ function App() {
                       <p className={`text-xs font-bold transition-colors ${getNameColorStyle(userProfileData.equippedColor).className}`}>{user.displayName}</p>
                     </div>
                     <img 
-                      src={user.photoURL || ''} 
+                      src={userProfileData.photoURL || user.photoURL || '/favicon.png'} 
                       alt={user.displayName || ''} 
                       className="h-9 w-9 rounded-full border-2 border-zinc-800 group-hover:border-blue-500/50 transition-colors object-cover"
                     />

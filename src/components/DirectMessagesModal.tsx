@@ -110,7 +110,7 @@ export default function DirectMessagesModal({
           [currentUser.uid]: {
             uid: currentUser.uid,
             displayName: currentUser.displayName || 'Voter',
-            photoURL: currentUser.photoURL || '',
+            photoURL: userProfileData?.photoURL || currentUser.photoURL || '',
             equippedColor: userProfileData?.equippedColor || 'default'
           },
           [initialTargetUser.uid]: {
@@ -316,7 +316,7 @@ export default function DirectMessagesModal({
         conversationId: activeConversationId,
         senderUid: currentUser.uid,
         senderDisplayName: currentUser.displayName || 'Voter',
-        senderPhotoURL: currentUser.photoURL || '',
+        senderPhotoURL: userProfileData?.photoURL || currentUser.photoURL || '',
         senderColor: userProfileData?.equippedColor || 'default',
         recipientUid,
         recipientDisplayName,
@@ -340,7 +340,7 @@ export default function DirectMessagesModal({
             [currentUser.uid]: {
               uid: currentUser.uid,
               displayName: currentUser.displayName || 'Voter',
-              photoURL: currentUser.photoURL || '',
+              photoURL: userProfileData?.photoURL || currentUser.photoURL || '',
               equippedColor: userProfileData?.equippedColor || 'default'
             },
             [recipientUid]: {
@@ -367,7 +367,7 @@ export default function DirectMessagesModal({
         addDoc(collection(db, 'chatFlags'), {
           userUid: currentUser.uid,
           userDisplayName: currentUser.displayName || 'Voter',
-          userPhotoURL: currentUser.photoURL || '',
+          userPhotoURL: userProfileData?.photoURL || currentUser.photoURL || '',
           originalText: rawText,
           filteredText: filterResult.cleanText,
           flaggedWords: filterResult.flaggedWords,
@@ -404,7 +404,7 @@ export default function DirectMessagesModal({
           [currentUser.uid]: {
             uid: currentUser.uid,
             displayName: currentUser.displayName || 'Voter',
-            photoURL: currentUser.photoURL || '',
+            photoURL: userProfileData?.photoURL || currentUser.photoURL || '',
             equippedColor: userProfileData?.equippedColor || 'default'
           },
           [partner.uid]: {

@@ -20,9 +20,12 @@ import {
   Upload,
   AlertTriangle,
   ShieldAlert,
-  Trash2
+  Trash2,
+  Clock
 } from 'lucide-react';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { User } from 'firebase/auth';
+import { db } from '../firebase';
 import { UserProfileData } from '../types';
 import { containsProfanityOrCensoredWords } from '../lib/chatFilter';
 
@@ -134,12 +137,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [moderationError, setModerationError] = useState<string | null>(null);
   const [copiedUid, setCopiedUid] = useState(false);
   const [activeTab, setActiveTab] = useState<'account' | 'preferences'>('account');
+  const [pendingAvatarReq, setPendingAvatarReq] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!user || !isOpen) return;
+
+    const q = query(
+      collection(db, 'avatarRequests'),
+      where('userId', '==', user.uid),
+      where('status', '==', 'pending')
+    );
+
+    const unsubscribe = onSnapshot(q, (snap) => {
+      if (!snap.empty) {
+        setPendingAvatarReq({ id: snap.docs[0].id, ...snap.docs[0].data() });
+      } else {
+        setPendingAvatarReq(null);
+      }
+    }, (err) => {
+      console.warn("Pending avatar request listener warning:", err);
+    });
+
+    return () => unsubscribe();
+  }, [user, isOpen]);
 
   useEffect(() => {
     if (user) {
       setDisplayName(user.displayName || '');
-      setPhotoURL(user.photoURL || '');
+      setPhotoURL(profileData.photoURL || user.photoURL || '');
       setBio(profileData.bio || 'Roblox gaming enthusiast & daily voter on BloxVote!');
       setModerationError(null);
     }
@@ -344,10 +370,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </motion.div>
                   )}
 
+                  {/* Pending Avatar Request Banner */}
+                  {pendingAvatarReq && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.98 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="p-3.5 rounded-2xl bg-sky-950/80 border border-sky-500/50 text-sky-200 text-xs font-bold flex items-center justify-between gap-3 shadow-lg"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Clock size={20} className="text-sky-400 shrink-0" />
+                        <div>
+                          <span className="block font-black text-white">Avatar Pending Admin Review 🛡️</span>
+                          <span className="block text-[11px] text-sky-300/90 font-medium leading-tight">
+                            Your requested image is in the admin moderation queue. Once approved, it will update automatically.
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-center shrink-0">
+                        <img
+                          src={pendingAvatarReq.requestedPhotoURL}
+                          alt="Pending Avatar"
+                          className="w-10 h-10 rounded-full object-cover border-2 border-sky-400 bg-zinc-950 shadow-md"
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+
                   <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                     <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-zinc-950 border-2 border-blue-500/50 shadow-xl group">
                       <img
-                        src={photoURL || user?.photoURL || '/favicon.png'}
+                        src={photoURL || profileData?.photoURL || user?.photoURL || '/favicon.png'}
                         alt={displayName || 'Avatar'}
                         className="h-full w-full object-cover"
                         onError={(e) => {

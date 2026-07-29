@@ -125,7 +125,7 @@ export default function UserProfile({
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6 border-b border-zinc-900 pb-4 sm:pb-6 pr-10 sm:pr-8">
                 <div className="relative shrink-0">
                   <img
-                    src={user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.uid}`}
+                    src={profileData?.photoURL || user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.uid}`}
                     alt={user.displayName || 'Voter'}
                     referrerPolicy="no-referrer"
                     className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl border-2 border-zinc-800 bg-zinc-900 object-cover"

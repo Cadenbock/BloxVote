@@ -158,7 +158,7 @@ export default function PublicChat({ user, profileData, isAdmin, onOpenDM }: Pub
         await addDoc(collection(db, 'chatFlags'), {
           userUid: user.uid,
           userDisplayName: user.displayName || user.email?.split('@')[0] || 'Player',
-          userPhotoURL: user.photoURL || null,
+          userPhotoURL: profileData?.photoURL || user.photoURL || null,
           originalText: trimmed,
           filteredText: cleanText,
           flaggedWords,
@@ -193,7 +193,7 @@ export default function PublicChat({ user, profileData, isAdmin, onOpenDM }: Pub
       await addDoc(collection(db, 'publicChat'), {
         senderUid: user.uid,
         senderDisplayName: user.displayName || user.email?.split('@')[0] || 'Player',
-        senderPhotoURL: user.photoURL || null,
+        senderPhotoURL: profileData?.photoURL || user.photoURL || null,
         senderColor: profileData.equippedColor || 'default',
         senderTheme: profileData.equippedTheme || 'default',
         senderTitle: profileData.equippedTitle || 'default',

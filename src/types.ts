@@ -24,7 +24,7 @@ export interface Vote {
 
 export interface Activity {
   id: string;
-  type: 'vote' | 'unvote' | 'add_game' | 'delete_game' | 'feature_game' | 'unfeature_game' | 'admin_add' | 'admin_remove' | 'admin_grant_coins' | 'chat_flagged' | 'custom_title_request' | 'approve_custom_title' | 'decline_custom_title' | 'shop_buy' | 'custom_theme_unlock';
+  type: 'vote' | 'unvote' | 'add_game' | 'delete_game' | 'feature_game' | 'unfeature_game' | 'admin_add' | 'admin_remove' | 'admin_grant_coins' | 'chat_flagged' | 'custom_title_request' | 'approve_custom_title' | 'decline_custom_title' | 'shop_buy' | 'custom_theme_unlock' | 'avatar_request' | 'approve_avatar' | 'decline_avatar';
   title: string;
   description: string;
   userDisplayName?: string;
@@ -137,6 +137,20 @@ export interface CustomTitleRequest {
   userEmail?: string;
   userPhotoURL?: string;
   requestedTitle: string;
+  status: 'pending' | 'accepted' | 'declined';
+  requestedAt: any;
+  reviewedAt?: any;
+  reviewedBy?: string;
+  rejectionReason?: string;
+}
+
+export interface AvatarRequest {
+  id: string;
+  userId: string;
+  userDisplayName: string;
+  userEmail?: string;
+  userPhotoURL?: string;
+  requestedPhotoURL: string;
   status: 'pending' | 'accepted' | 'declined';
   requestedAt: any;
   reviewedAt?: any;
