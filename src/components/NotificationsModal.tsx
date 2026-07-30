@@ -13,7 +13,9 @@ import {
   Megaphone, 
   ArrowRight, 
   Inbox,
-  Filter
+  Filter,
+  ShoppingBag,
+  ExternalLink
 } from 'lucide-react';
 import { AppNotification, NotificationType } from '../types';
 
@@ -234,6 +236,35 @@ export default function NotificationsModal({
 
           {/* List Content */}
           <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
+            {/* Featured Official Merch Banner */}
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500/20 via-rose-500/20 to-purple-600/20 border-2 border-amber-400/60 p-4 shadow-[0_0_25px_rgba(251,191,36,0.25)] flex flex-col sm:flex-row items-center justify-between gap-3.5">
+              <div className="flex items-center gap-3.5 w-full sm:w-auto">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-tr from-yellow-400 via-amber-400 to-rose-500 text-zinc-950 font-black shadow-lg">
+                  <ShoppingBag size={24} className="animate-bounce" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-400 text-zinc-950 shadow-sm">
+                      OFFICIAL MERCH
+                    </span>
+                    <Sparkles size={12} className="text-amber-400 animate-pulse" />
+                  </div>
+                  <h3 className="text-sm font-black text-white mt-0.5">BloxVote Store is Live!</h3>
+                  <p className="text-xs text-zinc-300">Hoodies, tees, stickers & exclusive collectibles.</p>
+                </div>
+              </div>
+              <a
+                href="https://shop.bloxvote.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full sm:w-auto shrink-0 flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-yellow-400 via-amber-400 to-rose-500 text-zinc-950 font-black text-xs sm:text-sm shadow-[0_0_20px_rgba(251,191,36,0.6)] hover:shadow-[0_0_30px_rgba(251,191,36,0.9)] hover:scale-105 active:scale-95 transition-all duration-200 border border-white/60 cursor-pointer"
+              >
+                <ShoppingBag size={16} className="text-zinc-950" />
+                <span>Merch Store!</span>
+                <ExternalLink size={14} className="text-zinc-950" />
+              </a>
+            </div>
+
             {filteredNotifications.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center text-zinc-500">
                 <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-zinc-900 border border-zinc-800 mb-3">

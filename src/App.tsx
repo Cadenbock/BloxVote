@@ -37,6 +37,7 @@ import UpdateLogsModal from './components/UpdateLogsModal';
 import ShopModal from './components/ShopModal';
 import PublicChat from './components/PublicChat';
 import NotificationsModal from './components/NotificationsModal';
+import MerchPopup from './components/MerchPopup';
 import { SettingsModal } from './components/SettingsModal';
 import { BloxVoteLoadingScreen } from './components/BloxVoteLoadingScreen';
 import { getNameColorStyle, getBackgroundThemeStyle, getFontItemStyle, getTitleItemStyle, NameColorItem, BackgroundThemeItem, FontItem, TitleItem } from './lib/shopData';
@@ -1967,6 +1968,8 @@ function App() {
         onClearAll={handleClearAllNotifications}
         onExecuteAction={handleExecuteNotificationAction}
       />
+
+      <MerchPopup />
 
       <SettingsModal
         isOpen={isSettingsOpen}
