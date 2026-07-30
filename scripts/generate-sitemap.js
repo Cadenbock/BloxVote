@@ -7,12 +7,9 @@ const __dirname = path.dirname(__filename);
 
 const BASE_URL = 'https://www.bloxvote.com';
 
-// Define static pages and routes for BloxVote
+// Define static pages and routes for BloxVote SPA
 const pages = [
   { url: '/', changefreq: 'daily', priority: '1.0' },
-  { url: '/leaderboard', changefreq: 'daily', priority: '0.9' },
-  { url: '/analytics', changefreq: 'weekly', priority: '0.8' },
-  { url: '/chat', changefreq: 'hourly', priority: '0.7' },
 ];
 
 const currentDate = new Date().toISOString().split('T')[0];
