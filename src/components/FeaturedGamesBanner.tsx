@@ -54,14 +54,14 @@ export default function FeaturedGamesBanner({ featuredGames, onVote, userVotes }
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-2xl font-black text-white tracking-tight">
-                Featured Experiences Spotlight
+                Daily Featured Games!
               </h2>
               <span className="rounded-full bg-amber-400/20 border border-amber-400/40 px-3 py-0.5 text-[10px] font-black uppercase text-amber-300 tracking-wider">
-                Official Curation
+                Daily & Admin Picks
               </span>
             </div>
             <p className="text-xs text-zinc-400 mt-0.5">
-              Handpicked top-tier Roblox experiences highlighted by community admins
+              Every day a new random experience is featured alongside admin-curated highlights
             </p>
           </div>
         </div>
@@ -140,8 +140,17 @@ export default function FeaturedGamesBanner({ featuredGames, onVote, userVotes }
                 
                 {/* Floating Featured Badge */}
                 <div className="absolute top-4 left-4 flex items-center gap-1.5 rounded-full bg-amber-500 text-black px-3.5 py-1.5 text-xs font-black shadow-xl uppercase tracking-wider">
-                  <Star size={14} className="fill-black" />
-                  Featured
+                  {currentGame.isDailyPick ? (
+                    <>
+                      <Sparkles size={14} className="fill-black" />
+                      Daily Pick
+                    </>
+                  ) : (
+                    <>
+                      <Star size={14} className="fill-black" />
+                      Admin Featured
+                    </>
+                  )}
                 </div>
 
                 {/* Vote Count Badge Overlay */}
@@ -171,6 +180,26 @@ export default function FeaturedGamesBanner({ featuredGames, onVote, userVotes }
               <p className="text-zinc-300 text-sm sm:text-base leading-relaxed max-w-2xl line-clamp-3">
                 {currentGame.description || `Experience "${currentGame.name}" by ${currentGame.creator}. Voted as one of Roblox's top candidate experiences by the community on BloxVote!`}
               </p>
+
+              {/* Admin / Daily Feature Reason Box */}
+              {currentGame.featuredReason && (
+                <div className="rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-yellow-500/10 border border-amber-500/40 p-3.5 sm:p-4 text-left shadow-lg backdrop-blur-sm max-w-2xl">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles size={15} className="text-amber-400 shrink-0" />
+                      <span className="text-[11px] font-black uppercase tracking-wider text-amber-400">
+                        {currentGame.isDailyPick ? "Why it's featured today:" : "Admin Feature Reason:"}
+                      </span>
+                    </div>
+                    {currentGame.featuredBy && !currentGame.isDailyPick && (
+                      <span className="text-[10px] text-zinc-400 font-medium">by {currentGame.featuredBy}</span>
+                    )}
+                  </div>
+                  <p className="text-xs sm:text-sm text-amber-100 font-medium italic leading-relaxed">
+                    "{currentGame.featuredReason}"
+                  </p>
+                </div>
+              )}
 
               {/* Action Buttons Row */}
               <div className="pt-3 flex flex-wrap items-center justify-center lg:justify-start gap-4">

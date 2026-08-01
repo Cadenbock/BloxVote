@@ -191,7 +191,51 @@ function App() {
     purchasedFonts: ['default'],
   });
 
-  const featuredGames = useMemo(() => games.filter(g => g.isFeatured), [games]);
+  const featuredGames = useMemo(() => {
+    if (!games || games.length === 0) return [];
+
+    // 1. Get games explicitly featured by admins
+    const adminFeatured = games.filter(g => g.isFeatured);
+
+    // 2. Deterministically pick today's random featured game based on date string (YYYY-MM-DD)
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    
+    let hash = 0;
+    for (let i = 0; i < todayStr.length; i++) {
+      hash = (hash << 5) - hash + todayStr.charCodeAt(i);
+      hash |= 0;
+    }
+    const seed = Math.abs(hash);
+    const dailyIndex = seed % games.length;
+    const pickedGame = games[dailyIndex];
+
+    const formattedDate = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const defaultDailyReason = `🎲 Community Random Daily Pick for ${formattedDate}!`;
+
+    const isAlreadyAdminFeatured = adminFeatured.some(g => g.id === pickedGame.id);
+
+    if (isAlreadyAdminFeatured) {
+      // Mark the picked game as daily pick while preserving admin reason if available
+      return adminFeatured.map(g =>
+        g.id === pickedGame.id
+          ? {
+              ...g,
+              isDailyPick: true,
+              featuredReason: g.featuredReason || defaultDailyReason
+            }
+          : g
+      );
+    } else {
+      // Prepend the daily pick to any admin featured games
+      const dailyPickGame: Game = {
+        ...pickedGame,
+        isDailyPick: true,
+        featuredReason: pickedGame.featuredReason || defaultDailyReason
+      };
+      return [dailyPickGame, ...adminFeatured];
+    }
+  }, [games]);
 
   // Sync custom banned words from Firestore settings/chatFilter
   useEffect(() => {

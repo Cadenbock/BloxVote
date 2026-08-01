@@ -148,6 +148,9 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
   const [isSavingLog, setIsSavingLog] = useState(false);
 
   // Modal states
+  const [featuringGameModal, setFeaturingGameModal] = useState<Game | null>(null);
+  const [featureReasonInput, setFeatureReasonInput] = useState<string>('');
+  const [isSubmittingFeature, setIsSubmittingFeature] = useState<boolean>(false);
   const [deletingGame, setDeletingGame] = useState<Game | null>(null);
   const [isAddAdminOpen, setIsAddAdminOpen] = useState(false);
   const [newAdminEmail, setNewAdminEmail] = useState('');
@@ -729,27 +732,43 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
   }, [games, searchGameQuery]);
 
   // Actions
-  const handleToggleFeature = async (game: Game) => {
-    const newFeaturedState = !game.isFeatured;
+  const handleOpenFeatureModal = (game: Game) => {
+    setFeaturingGameModal(game);
+    setFeatureReasonInput(game.featuredReason || '');
+  };
+
+  const handleSaveFeature = async (newFeaturedState: boolean) => {
+    if (!featuringGameModal) return;
+    setIsSubmittingFeature(true);
     try {
-      await updateDoc(doc(db, 'games', game.id), {
-        isFeatured: newFeaturedState
+      const reasonToSave = newFeaturedState ? (featureReasonInput.trim() || null) : null;
+      await updateDoc(doc(db, 'games', featuringGameModal.id), {
+        isFeatured: newFeaturedState,
+        featuredReason: reasonToSave,
+        featuredAt: newFeaturedState ? serverTimestamp() : null,
+        featuredBy: newFeaturedState ? (currentUser?.displayName || currentUser?.email || 'Admin') : null
       });
 
       await logActivity(
         newFeaturedState ? 'feature_game' : 'unfeature_game',
         newFeaturedState ? 'Featured Game' : 'Unfeatured Game',
-        `${currentUser?.displayName || 'Admin'} ${newFeaturedState ? 'featured' : 'unfeatured'} "${game.name}"`,
-        { gameId: game.id, gameName: game.name }
+        `${currentUser?.displayName || 'Admin'} ${newFeaturedState ? 'featured' : 'unfeatured'} "${featuringGameModal.name}"${reasonToSave ? ` with note: "${reasonToSave}"` : ''}`,
+        { gameId: featuringGameModal.id, gameName: featuringGameModal.name }
       );
 
       toast(
-        newFeaturedState ? `"${game.name}" is now featured on BloxVote! ⭐` : `Removed feature badge from "${game.name}"`,
+        newFeaturedState
+          ? `"${featuringGameModal.name}" is now featured on BloxVote! ⭐`
+          : `Removed feature badge from "${featuringGameModal.name}"`,
         'success'
       );
+      setFeaturingGameModal(null);
+      setFeatureReasonInput('');
     } catch (err: any) {
-      console.error('Error toggling feature state:', err);
+      console.error('Error updating feature state:', err);
       toast(`Failed to update game: ${err.message}`, 'error');
+    } finally {
+      setIsSubmittingFeature(false);
     }
   };
 
@@ -1513,6 +1532,11 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
                             )}
                           </div>
                           <p className="text-xs text-zinc-400 mt-0.5 truncate">by {game.creator}</p>
+                          {game.isFeatured && game.featuredReason && (
+                            <p className="text-xs text-amber-400/90 font-medium italic truncate mt-0.5">
+                              "{game.featuredReason}"
+                            </p>
+                          )}
                           <p className="text-xs text-zinc-500 font-mono mt-0.5">
                             {game.votes.toLocaleString()} votes
                           </p>
@@ -1522,7 +1546,7 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
                       {/* Controls */}
                       <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                         <button
-                          onClick={() => handleToggleFeature(game)}
+                          onClick={() => handleOpenFeatureModal(game)}
                           className={cn(
                             'flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-all',
                             game.isFeatured
@@ -1531,7 +1555,7 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
                           )}
                         >
                           <Star size={14} className={game.isFeatured ? 'fill-amber-300' : ''} />
-                          {game.isFeatured ? 'Unfeature' : 'Feature'}
+                          {game.isFeatured ? 'Manage Feature' : 'Feature'}
                         </button>
 
                         <a
@@ -3174,6 +3198,108 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
             )}
           </div>
         </motion.div>
+
+        {/* Modal: Feature Game with Optional Reason */}
+        <AnimatePresence>
+          {featuringGameModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setFeaturingGameModal(null)}
+                className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+              />
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 15 }}
+                className="relative z-10 w-full max-w-md rounded-3xl border border-amber-500/30 bg-zinc-950 p-6 shadow-2xl"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    <Star size={24} className="fill-amber-400" />
+                  </div>
+                  <button
+                    onClick={() => setFeaturingGameModal(null)}
+                    className="rounded-xl border border-zinc-800 bg-zinc-900 p-2 text-zinc-400 hover:text-white"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <h3 className="text-xl font-black text-white">
+                  {featuringGameModal.isFeatured ? 'Manage Featured Experience' : 'Feature Experience'}
+                </h3>
+                <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                  Feature <span className="font-bold text-white">"{featuringGameModal.name}"</span> on the homepage Daily Featured Games spotlight.
+                </p>
+
+                {/* Selected Game Preview */}
+                <div className="my-4 flex items-center gap-3 bg-zinc-900/60 p-3 rounded-2xl border border-zinc-800">
+                  <img
+                    src={featuringGameModal.imageUrl}
+                    alt=""
+                    className="h-12 w-12 rounded-xl object-cover shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-white truncate">{featuringGameModal.name}</p>
+                    <p className="text-xs text-zinc-500 truncate">by {featuringGameModal.creator} • {featuringGameModal.votes} votes</p>
+                  </div>
+                </div>
+
+                {/* Optional Feature Reason Input */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-amber-300 flex items-center justify-between">
+                    <span>Admin Feature Reason (Optional)</span>
+                    <span className="text-[10px] text-zinc-500 font-normal">Visible to all players</span>
+                  </label>
+                  <textarea
+                    value={featureReasonInput}
+                    onChange={(e) => setFeatureReasonInput(e.target.value)}
+                    placeholder="e.g., Outstanding gameplay, huge community update, or admin recommendation!"
+                    rows={3}
+                    className="w-full rounded-2xl border border-zinc-800 bg-zinc-900/90 p-3 text-xs text-white placeholder-zinc-500 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex flex-col sm:flex-row items-center gap-2.5 mt-6">
+                  {featuringGameModal.isFeatured && (
+                    <button
+                      disabled={isSubmittingFeature}
+                      onClick={() => handleSaveFeature(false)}
+                      className="w-full sm:w-auto rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs font-bold text-rose-400 hover:bg-rose-500/20 transition-all disabled:opacity-50"
+                    >
+                      Unfeature
+                    </button>
+                  )}
+
+                  <div className="flex items-center gap-2 w-full justify-end">
+                    <button
+                      onClick={() => setFeaturingGameModal(null)}
+                      className="flex-1 sm:flex-initial rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-xs font-bold text-zinc-300 hover:bg-zinc-800 transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      disabled={isSubmittingFeature}
+                      onClick={() => handleSaveFeature(true)}
+                      className="flex-1 sm:flex-initial rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 px-5 py-3 text-xs font-black text-black hover:from-amber-400 hover:to-yellow-300 transition-all shadow-lg shadow-amber-900/30 disabled:opacity-50"
+                    >
+                      {isSubmittingFeature
+                        ? 'Saving...'
+                        : featuringGameModal.isFeatured
+                        ? 'Update Note & Save'
+                        : 'Save & Feature'}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
 
         {/* Modal: Delete Game Confirmation */}
         <AnimatePresence>

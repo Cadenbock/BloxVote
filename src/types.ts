@@ -13,6 +13,10 @@ export interface Game {
   createdAt: any;
   createdBy: string;
   isFeatured?: boolean;
+  featuredReason?: string;
+  featuredAt?: any;
+  featuredBy?: string;
+  isDailyPick?: boolean;
 }
 
 export interface Vote {
