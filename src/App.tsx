@@ -1431,6 +1431,45 @@ function App() {
     }
   };
 
+  const handleDeleteAccount = async (): Promise<boolean> => {
+    if (!user) return false;
+    try {
+      const uid = user.uid;
+
+      // 1. Delete user profile document from Firestore
+      await deleteDoc(doc(db, 'users', uid));
+
+      // 2. Delete user streak document from Firestore if exists
+      try {
+        await deleteDoc(doc(db, 'userStreaks', uid));
+      } catch (e) {
+        console.warn("Could not delete user streak doc:", e);
+      }
+
+      // 3. Delete Firebase Auth user if supported
+      if (auth.currentUser) {
+        try {
+          await auth.currentUser.delete();
+        } catch (authErr: any) {
+          console.warn("Auth currentUser delete error:", authErr);
+          if (authErr?.code === 'auth/requires-recent-login') {
+            await logout();
+            toast("Account profile data deleted. Please re-login if you wish to register again.", "info");
+            return true;
+          }
+        }
+      }
+
+      await logout();
+      toast("Your BloxVote account and profile data have been permanently deleted.", "success");
+      return true;
+    } catch (err: any) {
+      console.error("Failed to delete user account:", err);
+      toast(`Failed to delete account: ${err.message || err}`, "error");
+      return false;
+    }
+  };
+
   const handleAddGame = async (gameData: any) => {
     if (!user) return;
 
@@ -2022,6 +2061,7 @@ function App() {
         profileData={userProfileData}
         onUpdateProfile={handleUpdateProfile}
         onSignOut={logout}
+        onDeleteAccount={handleDeleteAccount}
         soundEnabled={soundEnabled}
         onToggleSound={() => setSoundEnabled(!soundEnabled)}
         customAdminFonts={customAdminFonts}

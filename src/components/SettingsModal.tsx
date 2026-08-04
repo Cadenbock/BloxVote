@@ -40,6 +40,7 @@ interface SettingsModalProps {
   profileData: UserProfileData;
   onUpdateProfile: (updatedFields: { displayName?: string; photoURL?: string; bio?: string }) => Promise<boolean>;
   onSignOut: () => Promise<void>;
+  onDeleteAccount?: () => Promise<boolean>;
   soundEnabled?: boolean;
   onToggleSound?: () => void;
   customAdminFonts?: AdminCustomFont[];
@@ -133,6 +134,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   profileData,
   onUpdateProfile,
   onSignOut,
+  onDeleteAccount,
   soundEnabled = true,
   onToggleSound,
   customAdminFonts = [],
@@ -151,6 +153,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [customFontFamily, setCustomFontFamily] = useState('');
   const [customFontName, setCustomFontName] = useState('');
   const [isSavingFont, setIsSavingFont] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -591,6 +596,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
 
+                {/* Danger Zone: Delete Account */}
+                <div className="rounded-2xl border border-rose-900/60 bg-rose-950/20 p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle size={16} className="text-rose-400" />
+                      <h3 className="text-sm font-black text-rose-300">Danger Zone</h3>
+                    </div>
+                    <span className="text-[10px] font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2.5 py-0.5 rounded-full">
+                      Irreversible
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    Permanently delete your BloxVote profile, coins, equipped cosmetics, voting history, and account settings.
+                  </p>
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsDeleteConfirmOpen(true);
+                        setDeleteConfirmText('');
+                      }}
+                      className="flex items-center gap-2 text-xs font-black text-rose-300 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 px-4 py-2.5 rounded-xl transition-all cursor-pointer"
+                    >
+                      <Trash2 size={15} className="text-rose-400" />
+                      <span>Delete Account</span>
+                    </button>
+                  </div>
+                </div>
+
                 {/* Submit & Logout */}
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-zinc-800/80">
                   <button
@@ -856,6 +890,85 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             )}
           </div>
+
+          {/* Delete Account Confirmation Modal */}
+          <AnimatePresence>
+            {isDeleteConfirmOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="relative w-full max-w-md rounded-3xl border border-rose-500/50 bg-zinc-950 p-6 shadow-2xl text-white space-y-4"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-400 shrink-0">
+                      <Trash2 size={24} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-white">Permanently Delete Account?</h3>
+                      <p className="text-xs text-rose-400 font-bold">This action CANNOT be undone!</p>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-zinc-300 leading-relaxed bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800">
+                    All your saved profile data, <span className="font-bold text-amber-300">{profileData.coins} BloxCoins</span>, custom fonts, cosmetics, and voting streaks will be permanently erased.
+                  </p>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold text-zinc-400">
+                      Type <span className="font-mono text-rose-400 font-black">DELETE</span> to confirm:
+                    </label>
+                    <input
+                      type="text"
+                      value={deleteConfirmText}
+                      onChange={(e) => setDeleteConfirmText(e.target.value)}
+                      placeholder="DELETE"
+                      className="w-full rounded-xl bg-zinc-900 border border-zinc-800 px-3.5 py-2 text-xs font-mono text-white focus:border-rose-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2.5 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsDeleteConfirmOpen(false);
+                        setDeleteConfirmText('');
+                      }}
+                      className="px-4 py-2.5 rounded-xl border border-zinc-800 bg-zinc-900 text-xs font-bold text-zinc-300 hover:text-white transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deleteConfirmText.trim().toUpperCase() !== 'DELETE' || isDeletingAccount}
+                      onClick={async () => {
+                        if (!onDeleteAccount) return;
+                        setIsDeletingAccount(true);
+                        try {
+                          const success = await onDeleteAccount();
+                          if (success) {
+                            setIsDeleteConfirmOpen(false);
+                            onClose();
+                          }
+                        } finally {
+                          setIsDeletingAccount(false);
+                        }
+                      }}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-xs font-black text-white shadow-lg shadow-rose-900/40 transition-all cursor-pointer"
+                    >
+                      {isDeletingAccount ? (
+                        <RefreshCw size={14} className="animate-spin" />
+                      ) : (
+                        <Trash2 size={14} />
+                      )}
+                      <span>Permanently Delete</span>
+                    </button>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
         </motion.div>
       </div>
     </AnimatePresence>
