@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
+import { playSound } from '../lib/sounds';
 
 export type ToastType = 'success' | 'error' | 'info';
 
@@ -41,6 +42,14 @@ export function ToastProvider({ children }: ToastProviderProps) {
   const toast = useCallback((message: string, type: ToastType = 'info', duration = 3500) => {
     const id = Math.random().toString(36).substring(2, 9);
     setToasts((prev) => [...prev, { id, message, type, duration }]);
+
+    if (type === 'error') {
+      playSound('error');
+    } else if (type === 'success' && (message.toLowerCase().includes('coin') || message.toLowerCase().includes('claimed') || message.toLowerCase().includes('streak'))) {
+      playSound('coin');
+    } else {
+      playSound('notification');
+    }
 
     setTimeout(() => {
       removeToast(id);

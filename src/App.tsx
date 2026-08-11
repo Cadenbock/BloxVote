@@ -38,11 +38,25 @@ import ShopModal from './components/ShopModal';
 import PublicChat from './components/PublicChat';
 import NotificationsModal from './components/NotificationsModal';
 import MerchPopup from './components/MerchPopup';
+import MerchCouponModal from './components/MerchCouponModal';
+
+function formatCompactCoins(num: number): string {
+  if (num === undefined || num === null || isNaN(num)) return '0';
+  if (num < 1000000) return num.toLocaleString();
+  if (num >= 1e18) return (num / 1e18).toFixed(1) + ' Quint+';
+  if (num >= 1e15) return (num / 1e15).toFixed(1) + ' Quad';
+  if (num >= 1e12) return (num / 1e12).toFixed(1) + ' T';
+  if (num >= 1e9) return (num / 1e9).toFixed(1) + ' B';
+  if (num >= 1e6) return (num / 1e6).toFixed(1) + ' M';
+  return num.toLocaleString();
+}
+import CoolMerchButton from './components/CoolMerchButton';
 import { SettingsModal } from './components/SettingsModal';
 import { BloxVoteLoadingScreen } from './components/BloxVoteLoadingScreen';
 import { getNameColorStyle, getBackgroundThemeStyle, getFontItemStyle, getTitleItemStyle, NameColorItem, BackgroundThemeItem, FontItem, TitleItem } from './lib/shopData';
 import { useToast } from './components/Toast';
 import { logActivity } from './lib/activity';
+import { playSound, setGlobalSoundEnabled } from './lib/sounds';
 import { recordUserVotingStreak } from './lib/streak';
 import { cn } from './lib/utils';
 
@@ -172,6 +186,10 @@ function App() {
   const [isShopOpen, setIsShopOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+
+  useEffect(() => {
+    setGlobalSoundEnabled(soundEnabled);
+  }, [soundEnabled]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
   const [userStreak, setUserStreak] = useState<UserStreakData | null>(null);
@@ -909,6 +927,8 @@ function App() {
       return;
     }
 
+    playSound('vote');
+
     const game = games.find(g => g.id === gameId);
     const gameName = game ? game.name : 'Experience';
     const isVoted = !!userVotes[gameId];
@@ -1514,6 +1534,7 @@ function App() {
         createdBy: user.uid
       });
       toast(`Successfully submitted "${gameData.name}"! 🎉`, 'success');
+      playSound('fanfare');
 
       await logActivity('add_game', 'New Game Added', `Submitted "${gameData.name}" to BloxVote`, { gameId: docRef.id, gameName: gameData.name });
     } catch (error: any) {
@@ -1605,7 +1626,10 @@ function App() {
             {/* Navigation Tabs */}
             <div className="hidden md:flex items-center gap-1.5 rounded-full bg-zinc-900/90 border border-zinc-800 p-1.5 shadow-inner">
               <button
-                onClick={() => setCurrentTab('leaderboard')}
+                onClick={() => {
+                  playSound('click');
+                  setCurrentTab('leaderboard');
+                }}
                 className={cn(
                   "flex items-center gap-2 rounded-full px-5 py-2 text-xs sm:text-sm font-bold transition-all",
                   currentTab === 'leaderboard' ? "bg-zinc-800 text-white shadow-md border border-zinc-700/50" : "text-zinc-400 hover:text-zinc-200"
@@ -1615,7 +1639,10 @@ function App() {
                 Leaderboard
               </button>
               <button
-                onClick={() => setCurrentTab('analytics')}
+                onClick={() => {
+                  playSound('click');
+                  setCurrentTab('analytics');
+                }}
                 className={cn(
                   "flex items-center gap-2 rounded-full px-5 py-2 text-xs sm:text-sm font-bold transition-all",
                   currentTab === 'analytics' ? "bg-zinc-800 text-white shadow-md border border-zinc-700/50" : "text-zinc-400 hover:text-zinc-200"
@@ -1625,7 +1652,10 @@ function App() {
                 Insights & Graphs
               </button>
               <button
-                onClick={() => setCurrentTab('chat')}
+                onClick={() => {
+                  playSound('click');
+                  setCurrentTab('chat');
+                }}
                 className={cn(
                   "flex items-center gap-2 rounded-full px-5 py-2 text-xs sm:text-sm font-bold transition-all relative",
                   currentTab === 'chat' ? "bg-blue-600 text-white shadow-md border border-blue-500/40" : "text-zinc-400 hover:text-zinc-200"
@@ -1661,14 +1691,23 @@ function App() {
                 )}
               </button>
 
+              {/* Official Merch Store Header Button */}
+              <CoolMerchButton
+                variant="header"
+                label="Merch Store"
+              />
+
               {/* Coins & Shop Pill */}
               <button
-                onClick={() => setIsShopOpen(true)}
-                className="flex items-center gap-2 rounded-full border border-amber-500/40 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 px-4 py-2 text-xs font-black text-amber-300 transition-all hover:bg-amber-500/30 active:scale-95 shadow-md shadow-amber-950/30"
-                title="Open BloxCoins Shop & Customize"
+                onClick={() => {
+                  playSound('merchOpen');
+                  setIsShopOpen(true);
+                }}
+                className="flex items-center gap-2 rounded-full border border-amber-500/40 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 px-4 py-2 text-xs font-black text-amber-300 transition-all hover:bg-amber-500/30 active:scale-95 shadow-md shadow-amber-950/30 cursor-pointer"
+                title={`BloxCoins Balance: ${userProfileData.coins.toLocaleString()} Coins`}
               >
-                <Coins size={16} className="text-amber-400 fill-amber-400" />
-                <span>{userProfileData.coins.toLocaleString()} Coins</span>
+                <Coins size={16} className="text-amber-400 fill-amber-400 shrink-0" />
+                <span>{formatCompactCoins(userProfileData.coins)} Coins</span>
               </button>
 
               {user ? (
@@ -1777,18 +1816,26 @@ function App() {
               <div className="flex flex-wrap justify-center gap-4 sm:gap-6">
                 <button
                   onClick={() => user ? setIsAddModalOpen(true) : signIn()}
-                  className="flex items-center gap-2.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-7 py-3.5 sm:px-8 sm:py-4 text-sm sm:text-base font-bold text-white shadow-xl shadow-blue-900/30 transition-all hover:scale-105 active:scale-95"
+                  className="flex items-center gap-2.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-7 py-3.5 sm:px-8 sm:py-4 text-sm sm:text-base font-bold text-white shadow-xl shadow-blue-900/30 transition-all hover:scale-105 active:scale-95 cursor-pointer"
                 >
                   <Plus size={20} />
                   Add Your Favorite Game
                 </button>
                 <button
-                  onClick={() => setIsShopOpen(true)}
-                  className="flex items-center gap-2.5 rounded-full bg-amber-500/10 border border-amber-500/40 px-7 py-3.5 sm:px-8 sm:py-4 text-sm sm:text-base font-bold text-amber-300 transition-all hover:bg-amber-500/20 hover:scale-105 active:scale-95 shadow-lg shadow-amber-950/20"
+                  onClick={() => {
+                    playSound('merchOpen');
+                    setIsShopOpen(true);
+                  }}
+                  className="flex items-center gap-2.5 rounded-full bg-amber-500/10 border border-amber-500/40 px-7 py-3.5 sm:px-8 sm:py-4 text-sm sm:text-base font-bold text-amber-300 transition-all hover:bg-amber-500/20 hover:scale-105 active:scale-95 shadow-lg shadow-amber-950/20 cursor-pointer"
                 >
                   <ShoppingBag size={20} />
                   Open Cosmetic Shop
                 </button>
+                <CoolMerchButton
+                  variant="hero"
+                  label="Merch Store"
+                  sublabel="Exclusive Apparel Drop"
+                />
               </div>
             </motion.div>
           </div>
@@ -2053,6 +2100,7 @@ function App() {
       />
 
       <MerchPopup />
+      <MerchCouponModal />
 
       <SettingsModal
         isOpen={isSettingsOpen}

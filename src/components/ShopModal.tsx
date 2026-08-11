@@ -19,8 +19,11 @@ import {
   Upload, 
   Trash2,
   Lock,
-  ArrowRight
+  ArrowRight,
+  ShoppingBag,
+  Shirt
 } from 'lucide-react';
+import CoolMerchButton from './CoolMerchButton';
 import { User } from 'firebase/auth';
 import { 
   NAME_COLORS, 
@@ -37,6 +40,7 @@ import {
   getTitleItemStyle
 } from '../lib/shopData';
 import { UserProfileData, CustomTitleRequest, AdminCustomTitle, AdminCustomFont, CustomThemeConfig, CustomColorConfig, CustomFontConfig } from '../types';
+import { playSound } from '../lib/sounds';
 
 interface ShopModalProps {
   isOpen: boolean;
@@ -86,7 +90,7 @@ export default function ShopModal({
   customAdminTitles = [],
   customAdminFonts = [],
 }: ShopModalProps) {
-  const [activeTab, setActiveTab] = useState<'titles' | 'colors' | 'themes' | 'fonts' | 'earn'>('titles');
+  const [activeTab, setActiveTab] = useState<'titles' | 'colors' | 'themes' | 'fonts' | 'earn' | 'merch'>('titles');
   const [loadingItemId, setLoadingItemId] = useState<string | null>(null);
   const [isClaimingBonus, setIsClaimingBonus] = useState(false);
 
@@ -218,7 +222,8 @@ export default function ShopModal({
   const handleBuy = async (type: 'color' | 'theme' | 'font' | 'title', item: any) => {
     setLoadingItemId(item.id);
     try {
-      await onBuyItem(type, item);
+      const res = await onBuyItem(type, item);
+      if (res) playSound('purchase');
     } finally {
       setLoadingItemId(null);
     }
@@ -228,6 +233,7 @@ export default function ShopModal({
     setLoadingItemId(itemId);
     try {
       await onEquipItem(type, itemId);
+      playSound('equip');
     } finally {
       setLoadingItemId(null);
     }
@@ -382,7 +388,10 @@ export default function ShopModal({
           {/* Navigation Tabs */}
           <div className="flex border-b border-zinc-800/80 px-6 sm:px-8 pt-3 bg-zinc-950/80 gap-3 overflow-x-auto scrollbar-none">
             <button
-              onClick={() => setActiveTab('titles')}
+              onClick={() => {
+                playSound('click');
+                setActiveTab('titles');
+              }}
               className={`flex items-center gap-2.5 py-4 px-6 font-extrabold text-sm border-b-2 transition-all shrink-0 ${
                 activeTab === 'titles'
                   ? 'border-amber-500 text-amber-400'
@@ -393,7 +402,10 @@ export default function ShopModal({
               Titles & Prefix Catalog
             </button>
             <button
-              onClick={() => setActiveTab('colors')}
+              onClick={() => {
+                playSound('click');
+                setActiveTab('colors');
+              }}
               className={`flex items-center gap-2.5 py-4 px-6 font-extrabold text-sm border-b-2 transition-all shrink-0 ${
                 activeTab === 'colors'
                   ? 'border-amber-500 text-amber-400'
@@ -404,7 +416,10 @@ export default function ShopModal({
               Name Colors & Auras
             </button>
             <button
-              onClick={() => setActiveTab('themes')}
+              onClick={() => {
+                playSound('click');
+                setActiveTab('themes');
+              }}
               className={`flex items-center gap-2.5 py-4 px-6 font-extrabold text-sm border-b-2 transition-all shrink-0 ${
                 activeTab === 'themes'
                   ? 'border-amber-500 text-amber-400'
@@ -415,7 +430,27 @@ export default function ShopModal({
               Background Themes
             </button>
             <button
-              onClick={() => setActiveTab('earn')}
+              onClick={() => {
+                playSound('merchOpen');
+                setActiveTab('merch');
+              }}
+              className={`flex items-center gap-2.5 py-4 px-6 font-extrabold text-sm border-b-2 transition-all shrink-0 relative ${
+                activeTab === 'merch'
+                  ? 'border-amber-400 text-amber-300'
+                  : 'border-transparent text-rose-400 hover:text-rose-200'
+              }`}
+            >
+              <Shirt size={18} className="text-amber-400 animate-bounce" />
+              <span>Official Merch Store</span>
+              <span className="px-1.5 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-rose-500 text-zinc-950 font-black text-[9px] uppercase tracking-wider animate-pulse">
+                HOT DROP
+              </span>
+            </button>
+            <button
+              onClick={() => {
+                playSound('click');
+                setActiveTab('earn');
+              }}
               className={`flex items-center gap-2.5 py-4 px-6 font-extrabold text-sm border-b-2 transition-all shrink-0 ${
                 activeTab === 'earn'
                   ? 'border-amber-500 text-amber-400'
@@ -911,6 +946,126 @@ export default function ShopModal({
                         </div>
                       );
                     })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* MERCH TAB */}
+            {activeTab === 'merch' && (
+              <div className="space-y-8">
+                <div className="rounded-3xl border-2 border-amber-400/60 bg-gradient-to-r from-amber-950/40 via-rose-950/30 to-purple-950/40 p-6 sm:p-8 space-y-6 shadow-2xl relative overflow-hidden">
+                  <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
+                    <div className="space-y-2 text-center md:text-left">
+                      <div className="inline-flex items-center gap-2 bg-rose-500/20 text-rose-300 border border-rose-500/40 px-3.5 py-1 rounded-full text-xs font-black uppercase tracking-wider">
+                        <Sparkles size={14} className="animate-spin text-amber-400" />
+                        <span>PROMO CODE: <strong>BLOXVOTE</strong> (30% OFF orders over $25.00)</span>
+                      </div>
+                      <h3 className="text-3xl font-black text-white tracking-tight">
+                        BloxVote Gear & Apparel
+                      </h3>
+                      <p className="text-xs sm:text-sm text-zinc-300 max-w-xl leading-relaxed">
+                        Represent the #1 Roblox Voting Community in real life! Premium heavyweight hoodies, embroidered caps, vinyl sticker packs, and limited edition drops. Use coupon code <strong className="text-amber-300 font-mono">BLOXVOTE</strong> for 30% off!
+                      </p>
+                    </div>
+
+                    <CoolMerchButton
+                      variant="floating"
+                      label="Visit Merch Store"
+                      sublabel="Official Apparel & Collectibles"
+                      className="shrink-0"
+                    />
+                  </div>
+                </div>
+
+                {/* Merch Items Grid Showcase */}
+                <div>
+                  <h4 className="text-xl font-black text-white mb-4 flex items-center gap-2">
+                    <Shirt className="text-amber-400" size={22} />
+                    Featured Merchandise Drop Collection
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {[
+                      {
+                        title: 'BloxVote Pro Heavyweight Hoodie',
+                        tag: 'BESTSELLER 🔥',
+                        price: '$49.99',
+                        desc: 'Ultra-soft fleece hoodie featuring custom 3D embroidered BloxVote logo.',
+                        color: 'from-amber-500/20 to-orange-500/10 border-amber-500/40',
+                        emoji: '🧥',
+                      },
+                      {
+                        title: 'Limited Edition Voter T-Shirt',
+                        tag: 'NEW DROP ✨',
+                        price: '$24.99',
+                        desc: '100% ring-spun cotton tee with reflective metallic print.',
+                        color: 'from-purple-500/20 to-pink-500/10 border-purple-500/40',
+                        emoji: '👕',
+                      },
+                      {
+                        title: 'Roblox Founder Snapback Cap',
+                        tag: 'EXCLUSIVE 👑',
+                        price: '$29.99',
+                        desc: 'Structured 6-panel cap with high-density embroidered crown emblem.',
+                        color: 'from-blue-500/20 to-cyan-500/10 border-blue-500/40',
+                        emoji: '🧢',
+                      },
+                      {
+                        title: 'Holographic Sticker Pack (10x)',
+                        tag: 'FAN FAVORITE 🌟',
+                        price: '$9.99',
+                        desc: 'Waterproof vinyl holographic stickers for your laptop, gaming desk, & water bottle.',
+                        color: 'from-emerald-500/20 to-teal-500/10 border-emerald-500/40',
+                        emoji: '🏷️',
+                      },
+                      {
+                        title: 'BloxCoins Metal Keychain & Pin',
+                        tag: 'COLLECTIBLE 💎',
+                        price: '$14.99',
+                        desc: 'Solid die-cast metal coin keychain with polished gold electroplating.',
+                        color: 'from-yellow-500/20 to-amber-500/10 border-yellow-500/40',
+                        emoji: '🪙',
+                      },
+                      {
+                        title: 'Valkyrie Boss Desk Mat',
+                        tag: 'DESK DROP 🎮',
+                        price: '$34.99',
+                        desc: 'Extra-large 900x400mm gaming mousepad with stitched edges & vibrant RGB art.',
+                        color: 'from-rose-500/20 to-indigo-500/10 border-rose-500/40',
+                        emoji: '🕹️',
+                      },
+                    ].map((item, idx) => (
+                      <div
+                        key={idx}
+                        className={`rounded-3xl border bg-gradient-to-b ${item.color} bg-zinc-950 p-6 flex flex-col justify-between gap-4 shadow-xl hover:scale-[1.02] transition-all group`}
+                      >
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-amber-400 text-zinc-950 shadow-sm">
+                              {item.tag}
+                            </span>
+                            <span className="text-xl font-black text-amber-300">{item.price}</span>
+                          </div>
+
+                          <div className="flex items-center gap-3 py-2">
+                            <div className="text-4xl p-3 rounded-2xl bg-zinc-900 border border-zinc-800 shadow-inner group-hover:scale-110 transition-transform">
+                              {item.emoji}
+                            </div>
+                            <div>
+                              <h5 className="font-black text-white text-base leading-tight">{item.title}</h5>
+                              <p className="text-xs text-zinc-400 mt-1 line-clamp-2">{item.desc}</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <CoolMerchButton
+                          variant="compact"
+                          label={`Buy ${item.title}`}
+                          className="w-full justify-center py-2.5"
+                        />
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>

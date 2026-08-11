@@ -18,6 +18,8 @@ import { PublicChatMessage, UserProfileData } from '../types';
 import { getNameColorStyle, getTitleItemStyle } from '../lib/shopData';
 import { filterChatMessage, setCustomBannedWords } from '../lib/chatFilter';
 import { useToast } from './Toast';
+import { playSound } from '../lib/sounds';
+import CoolMerchButton from './CoolMerchButton';
 
 interface PublicChatProps {
   user: User | null;
@@ -199,6 +201,7 @@ export default function PublicChat({ user, profileData, isAdmin }: PublicChatPro
         text: cleanText,
         timestamp: serverTimestamp(),
       });
+      playSound('click');
       setInputText('');
       setTimeout(scrollToBottom, 100);
     } catch (error) {
@@ -241,9 +244,13 @@ export default function PublicChat({ user, profileData, isAdmin }: PublicChatPro
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-zinc-400 bg-zinc-950/60 px-3 py-1.5 rounded-full border border-zinc-800">
-          <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>Live Room ({messages.length} msgs)</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-xs text-zinc-400 bg-zinc-950/60 px-3 py-1.5 rounded-full border border-zinc-800">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Live Room ({messages.length} msgs)</span>
+          </div>
+
+          <CoolMerchButton variant="header" label="Merch Drop" />
         </div>
       </div>
 

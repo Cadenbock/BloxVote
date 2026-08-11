@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { User } from 'firebase/auth';
+import { playSound, SoundType } from '../lib/sounds';
 import { db } from '../firebase';
 import { UserProfileData, AdminCustomFont, CustomFontConfig } from '../types';
 import { FONT_ITEMS, getFontItemStyle } from '../lib/shopData';
@@ -863,6 +864,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       />
                     </button>
                   </div>
+
+                  {/* Sound Effects Preview Soundboard */}
+                  {soundEnabled && (
+                    <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800/80 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black uppercase text-blue-400 tracking-wider flex items-center gap-1.5">
+                          <Sparkles size={13} />
+                          Test Sound Effects
+                        </span>
+                        <span className="text-[10px] text-zinc-500">Click any sound to test playback</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[
+                          { label: '⭐ Vote Chime', type: 'vote' as SoundType, color: 'bg-amber-500/10 border-amber-500/30 text-amber-300' },
+                          { label: '🪙 Coin Collect', type: 'coin' as SoundType, color: 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300' },
+                          { label: '🛍️ Shop Purchase', type: 'purchase' as SoundType, color: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' },
+                          { label: '✨ Equip Cosmetic', type: 'equip' as SoundType, color: 'bg-indigo-500/10 border-indigo-500/30 text-indigo-300' },
+                          { label: '🔔 Notification', type: 'notification' as SoundType, color: 'bg-sky-500/10 border-sky-500/30 text-sky-300' },
+                          { label: '🏆 Victory Fanfare', type: 'fanfare' as SoundType, color: 'bg-purple-500/10 border-purple-500/30 text-purple-300' },
+                          { label: '👆 Click Pop', type: 'click' as SoundType, color: 'bg-zinc-800 border-zinc-700 text-zinc-300' },
+                          { label: '⚠️ Warning / Error', type: 'error' as SoundType, color: 'bg-rose-500/10 border-rose-500/30 text-rose-300' },
+                        ].map((s) => (
+                          <button
+                            key={s.type}
+                            type="button"
+                            onClick={() => playSound(s.type)}
+                            className={`p-2.5 rounded-xl border text-xs font-bold transition-all hover:scale-105 active:scale-95 flex items-center justify-center text-center ${s.color}`}
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between p-4 rounded-xl bg-zinc-950 border border-zinc-800">
                     <div className="flex items-center gap-3">
