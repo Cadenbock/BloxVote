@@ -115,6 +115,19 @@ export interface CustomFontConfig {
   sampleText?: string;
 }
 
+export interface RobloxAccountInfo {
+  id: number;
+  name: string;
+  displayName: string;
+  description?: string;
+  avatarHeadshot: string;
+  avatarFull?: string;
+  profileUrl?: string;
+  created?: string;
+  hasVerifiedBadge?: boolean;
+  isVerifiedOwner?: boolean;
+}
+
 export interface UserProfileData {
   coins: number;
   equippedColor: string;
@@ -132,6 +145,16 @@ export interface UserProfileData {
   photoURL?: string;
   lastDailyBonusDate?: string;
   lastCustomTitleRequestTime?: number;
+  // Roblox profile integration
+  robloxUsername?: string;
+  robloxId?: number;
+  robloxDisplayName?: string;
+  robloxAvatarHeadshot?: string;
+  robloxAvatarFull?: string;
+  robloxProfileUrl?: string;
+  authProvider?: 'google' | 'roblox' | 'anonymous' | string;
+  isRobloxVerified?: boolean;
+  robloxAccount?: RobloxAccountInfo;
 }
 
 export interface CustomTitleRequest {

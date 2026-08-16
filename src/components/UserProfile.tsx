@@ -1,9 +1,10 @@
 import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Trophy, ThumbsUp, ExternalLink, Calendar, Mail, Flame, Award, Trash2, Zap, Sparkles, Coins, ShoppingBag, Palette } from 'lucide-react';
-import { Game, UserStreakData, UserProfileData } from '../types';
+import { UserProfileData, AdminCustomFont, CustomFontConfig, Game, UserStreakData } from '../types';
 import { getNameColorStyle, getBackgroundThemeStyle, getFontItemStyle, getTitleItemStyle } from '../lib/shopData';
 import { User } from 'firebase/auth';
+import { getStoredRobloxUser } from '../firebase';
 
 interface UserProfileProps {
   isOpen: boolean;
@@ -15,6 +16,7 @@ interface UserProfileProps {
   profileData?: UserProfileData;
   onVote: (gameId: string) => Promise<void>;
   onOpenShop?: () => void;
+  onOpenLinkRoblox?: () => void;
 }
 
 export default function UserProfile({ 
@@ -23,10 +25,11 @@ export default function UserProfile({
   user, 
   games, 
   userVotes, 
-  userStreak,
-  profileData,
-  onVote,
-  onOpenShop
+  userStreak, 
+  profileData, 
+  onVote, 
+  onOpenShop,
+  onOpenLinkRoblox
 }: UserProfileProps) {
 
   // Filter games that this user has voted for
@@ -250,6 +253,110 @@ export default function UserProfile({
                   </div>
                 </div>
               </div>
+
+              {/* 🎮 ROBLOX CONNECTED IDENTITY CARD */}
+              {(() => {
+                const storedRoblox = getStoredRobloxUser();
+                const effectiveRoblox = profileData?.robloxAccount || (user as any)?.robloxAccount || storedRoblox;
+                const isRobloxUser = (user as any)?.isRoblox || user?.uid?.startsWith('roblox_');
+                
+                const connectedUsername = profileData?.robloxUsername || effectiveRoblox?.name || (isRobloxUser ? (user?.displayName || profileData?.displayName) : undefined);
+                const connectedDisplayName = profileData?.robloxDisplayName || effectiveRoblox?.displayName || user?.displayName || connectedUsername;
+                const connectedId = profileData?.robloxId || effectiveRoblox?.id || (user?.uid?.startsWith('roblox_') ? user?.uid.replace('roblox_', '') : null);
+                const connectedAvatar = profileData?.robloxAvatarHeadshot || effectiveRoblox?.avatarHeadshot || user?.photoURL;
+                const isConnectedVerified = profileData?.isRobloxVerified !== undefined ? profileData.isRobloxVerified : (effectiveRoblox?.isVerifiedOwner ?? isRobloxUser);
+                const hasRoblox = !!(connectedUsername || effectiveRoblox || isRobloxUser);
+
+                return (
+                  <div className="rounded-2xl sm:rounded-3xl border border-red-500/30 bg-gradient-to-r from-red-950/30 via-zinc-900 to-zinc-900 p-4 sm:p-5 shadow-lg">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3.5">
+                        <div className="relative shrink-0">
+                          {connectedAvatar ? (
+                            <img 
+                              src={connectedAvatar} 
+                              alt={connectedDisplayName || 'Roblox User'}
+                              className="h-12 w-12 sm:h-14 sm:w-14 rounded-2xl border-2 border-red-500/50 bg-zinc-950 object-cover"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).src = '/favicon.png';
+                              }}
+                            />
+                          ) : (
+                            <div className="flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-2xl bg-red-600/20 border border-red-500/40 text-red-400">
+                              <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
+                                <path d="M18.92 2.01L5.08 5.71 1.38 19.55l13.84-3.7 3.7-13.84zM10.8 14.88l-2.48.66.66-2.48 2.48-.66-.66 2.48z"/>
+                              </svg>
+                            </div>
+                          )}
+                          {isConnectedVerified && (
+                            <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 border border-zinc-950 text-white shadow" title="Verified Roblox Account">
+                              <Award size={10} />
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-red-400 flex items-center gap-1">
+                              <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
+                                <path d="M18.92 2.01L5.08 5.71 1.38 19.55l13.84-3.7 3.7-13.84zM10.8 14.88l-2.48.66.66-2.48 2.48-.66-.66 2.48z"/>
+                              </svg>
+                              Roblox Profile
+                            </span>
+                            {isConnectedVerified && (
+                              <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                Verified Owner
+                              </span>
+                            )}
+                          </div>
+
+                          {hasRoblox ? (
+                            <>
+                              <h4 className="text-base font-black text-white">
+                                {connectedDisplayName || connectedUsername}
+                              </h4>
+                              <p className="text-xs text-zinc-400">
+                                @{connectedUsername} {connectedId && `• ID: ${connectedId}`}
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <h4 className="text-sm font-bold text-zinc-300">
+                                No Roblox Account Linked
+                              </h4>
+                              <p className="text-[11px] text-zinc-500">
+                                Link your Roblox character to display your 3D avatar & username.
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                        {hasRoblox && connectedId && (
+                          <a
+                            href={`https://www.roblox.com/users/${connectedId}/profile`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs font-bold text-zinc-300 hover:text-white hover:bg-zinc-800 transition-all"
+                          >
+                            <ExternalLink size={13} />
+                            <span>View Roblox</span>
+                          </a>
+                        )}
+                        {onOpenLinkRoblox && (
+                          <button
+                            onClick={onOpenLinkRoblox}
+                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white text-xs font-bold transition-all shadow-md active:scale-95"
+                          >
+                            <span>{hasRoblox ? 'Switch Roblox' : 'Link Roblox'}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Statistics Panel */}
               <div className="grid grid-cols-2 gap-4">

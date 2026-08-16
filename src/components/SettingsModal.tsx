@@ -29,7 +29,7 @@ import {
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 import { playSound, SoundType } from '../lib/sounds';
-import { db } from '../firebase';
+import { db, getStoredRobloxUser } from '../firebase';
 import { UserProfileData, AdminCustomFont, CustomFontConfig } from '../types';
 import { FONT_ITEMS, getFontItemStyle } from '../lib/shopData';
 import { containsProfanityOrCensoredWords } from '../lib/chatFilter';
@@ -47,6 +47,8 @@ interface SettingsModalProps {
   customAdminFonts?: AdminCustomFont[];
   onEquipFont?: (fontId: string) => Promise<void>;
   onSaveCustomFont?: (config: CustomFontConfig) => Promise<boolean>;
+  onOpenLinkRoblox?: () => void;
+  onUnlinkRoblox?: () => Promise<void>;
 }
 
 const PRESET_AVATARS = [
@@ -141,6 +143,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   customAdminFonts = [],
   onEquipFont,
   onSaveCustomFont,
+  onOpenLinkRoblox,
+  onUnlinkRoblox,
 }) => {
   const [displayName, setDisplayName] = useState('');
   const [photoURL, setPhotoURL] = useState('');
@@ -550,6 +554,110 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     />
                   </div>
                 </div>
+
+                {/* 🎮 Connected Roblox Account Panel */}
+                {(() => {
+                  const storedRoblox = getStoredRobloxUser();
+                  const effectiveRoblox = profileData?.robloxAccount || (user as any)?.robloxAccount || storedRoblox;
+                  const isRobloxUser = (user as any)?.isRoblox || user?.uid?.startsWith('roblox_');
+                  
+                  const connectedUsername = profileData?.robloxUsername || effectiveRoblox?.name || (isRobloxUser ? (user?.displayName || profileData?.displayName) : undefined);
+                  const connectedDisplayName = profileData?.robloxDisplayName || effectiveRoblox?.displayName || user?.displayName || connectedUsername;
+                  const connectedId = profileData?.robloxId || effectiveRoblox?.id || (user?.uid?.startsWith('roblox_') ? user?.uid.replace('roblox_', '') : null);
+                  const connectedAvatar = profileData?.robloxAvatarHeadshot || effectiveRoblox?.avatarHeadshot || photoURL || user?.photoURL;
+                  const isConnectedVerified = profileData?.isRobloxVerified !== undefined ? profileData.isRobloxVerified : (effectiveRoblox?.isVerifiedOwner ?? isRobloxUser);
+                  const hasRoblox = !!(connectedUsername || effectiveRoblox || isRobloxUser);
+
+                  return (
+                    <div className="rounded-2xl border border-red-500/40 bg-gradient-to-r from-red-950/30 via-zinc-900/60 to-zinc-900/50 p-5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-black text-white flex items-center gap-2">
+                            <svg className="w-4 h-4 fill-red-500" viewBox="0 0 24 24">
+                              <path d="M18.92 2.01L5.08 5.71 1.38 19.55l13.84-3.7 3.7-13.84zM10.8 14.88l-2.48.66.66-2.48 2.48-.66-.66 2.48z"/>
+                            </svg>
+                            Connected Roblox Identity
+                          </h3>
+                          <p className="text-xs text-zinc-400 mt-0.5">
+                            Sync your official 3D avatar headshot, Roblox username, and verified status.
+                          </p>
+                        </div>
+                        {hasRoblox && (
+                          <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                            <Check size={12} />
+                            Connected
+                          </span>
+                        )}
+                      </div>
+
+                      {hasRoblox ? (
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-zinc-950/80 border border-zinc-800">
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={connectedAvatar || '/favicon.png'}
+                              alt={connectedDisplayName || 'Roblox User'}
+                              className="h-11 w-11 rounded-xl border border-red-500/40 bg-zinc-900 object-cover"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).src = '/favicon.png';
+                              }}
+                            />
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-sm font-black text-white">
+                                  {connectedDisplayName || connectedUsername}
+                                </span>
+                                {isConnectedVerified && (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                                    Verified
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-xs text-zinc-400 block">
+                                @{connectedUsername} {connectedId && `• ID: ${connectedId}`}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {onOpenLinkRoblox && (
+                              <button
+                                type="button"
+                                onClick={onOpenLinkRoblox}
+                                className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-zinc-200 transition-all"
+                              >
+                                Switch Account
+                              </button>
+                            )}
+                            {onUnlinkRoblox && (
+                              <button
+                                type="button"
+                                onClick={onUnlinkRoblox}
+                                className="px-3 py-1.5 rounded-lg bg-rose-950/30 hover:bg-rose-950/60 border border-rose-900/40 text-xs font-bold text-rose-300 transition-all"
+                              >
+                                Unlink
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between p-3.5 rounded-xl bg-zinc-950/80 border border-zinc-800">
+                          <div className="text-xs text-zinc-400">
+                            No Roblox account linked to this profile.
+                          </div>
+                          {onOpenLinkRoblox && (
+                            <button
+                              type="button"
+                              onClick={onOpenLinkRoblox}
+                              className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-xs font-bold text-white transition-all shadow-md active:scale-95"
+                            >
+                              Connect Roblox
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Account Credentials */}
                 <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/50 p-5 space-y-3">

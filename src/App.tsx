@@ -24,7 +24,7 @@ import { containsProfanityOrCensoredWords, setCustomBannedWords } from './lib/ch
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { Trophy, Plus, LogIn, LogOut, Gamepad2, Search, TrendingUp, AlertTriangle, BarChart3, CircleUser, Download, Shield, Star, Flame, Sparkles, FileText, Coins, ShoppingBag, MessageSquare, Bell, Settings as SettingsIcon } from 'lucide-react';
 import { updateProfile } from 'firebase/auth';
-import { db, auth, signIn, logout } from './firebase';
+import { db, auth, signIn, logout, unlinkRobloxAccount, getStoredRobloxUser } from './firebase';
 import { Game, UserStreakData, GlobalAnnouncement, UserProfileData, AppNotification, CustomTitleRequest, AdminCustomTitle, AdminCustomFont, CustomThemeConfig, CustomColorConfig, CustomFontConfig } from './types';
 import GameCard from './components/GameCard';
 import AddGameModal from './components/AddGameModal';
@@ -39,6 +39,7 @@ import PublicChat from './components/PublicChat';
 import NotificationsModal from './components/NotificationsModal';
 import MerchPopup from './components/MerchPopup';
 import MerchCouponModal from './components/MerchCouponModal';
+import SignInModal from './components/SignInModal';
 
 function formatCompactCoins(num: number): string {
   if (num === undefined || num === null || isNaN(num)) return '0';
@@ -107,9 +108,8 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     },
     operationType,
     path
-  }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  };
+  console.warn('Firestore Operation Warning: ', JSON.stringify(errInfo));
 }
 
 interface ErrorBoundaryProps {
@@ -185,6 +185,9 @@ function App() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isShopOpen, setIsShopOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSignInModalOpen, setIsSignInModalOpen] = useState(false);
+  const [signInInitialTab, setSignInInitialTab] = useState<'roblox_fast' | 'roblox_oauth' | 'google'>('roblox_fast');
+  const [isLinkRobloxModalOpen, setIsLinkRobloxModalOpen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
 
   useEffect(() => {
@@ -286,21 +289,54 @@ function App() {
 
     const userRef = doc(db, 'users', user.uid);
 
-    // Sync user email & displayName to Firestore document for player search
-    if (user.email || user.displayName) {
+    const storedRoblox = getStoredRobloxUser();
+    const activeRoblox = (user as any).robloxAccount || storedRoblox;
+    const isRobloxUser = (user as any).isRoblox || user.uid?.startsWith('roblox_');
+
+    // Sync user email, displayName, & Roblox account to Firestore document for player search & settings
+    if (user.email || user.displayName || activeRoblox) {
       const syncData: any = {
         email: user.email || '',
-        displayName: user.displayName || 'Player',
+        displayName: user.displayName || activeRoblox?.displayName || activeRoblox?.name || 'Player',
       };
-      if (user.photoURL) {
-        syncData.photoURL = user.photoURL;
+      if (user.photoURL || activeRoblox?.avatarHeadshot) {
+        syncData.photoURL = user.photoURL || activeRoblox?.avatarHeadshot;
+      }
+      if (activeRoblox) {
+        syncData.robloxUsername = activeRoblox.name;
+        syncData.robloxId = activeRoblox.id;
+        syncData.robloxDisplayName = activeRoblox.displayName || activeRoblox.name;
+        syncData.robloxAvatarHeadshot = activeRoblox.avatarHeadshot || syncData.photoURL;
+        syncData.robloxAvatarFull = activeRoblox.avatarFull || '';
+        syncData.robloxProfileUrl = `https://www.roblox.com/users/${activeRoblox.id}/profile`;
+        syncData.authProvider = 'roblox';
+        syncData.isRobloxVerified = true;
+        syncData.robloxAccount = activeRoblox;
+      } else if (isRobloxUser && user.uid?.startsWith('roblox_')) {
+        const robloxNumId = parseInt(user.uid.replace('roblox_', ''), 10) || undefined;
+        syncData.robloxUsername = user.displayName || '';
+        syncData.robloxId = robloxNumId;
+        syncData.robloxDisplayName = user.displayName || '';
+        syncData.robloxAvatarHeadshot = user.photoURL || '';
+        syncData.isRobloxVerified = true;
       }
       setDoc(userRef, syncData, { merge: true }).catch(console.error);
     }
 
     const unsubscribe = onSnapshot(userRef, (snapshot) => {
+      const currentStoredRoblox = getStoredRobloxUser();
+      const currentActiveRoblox = (user as any).robloxAccount || currentStoredRoblox;
+      const currentIsRoblox = (user as any).isRoblox || user.uid?.startsWith('roblox_');
+
       if (snapshot.exists()) {
         const data = snapshot.data();
+        const effectiveRoblox = data.robloxAccount || currentActiveRoblox;
+        const resolvedRobloxUsername = data.robloxUsername || effectiveRoblox?.name || (currentIsRoblox ? (data.displayName || user.displayName) : undefined);
+        const resolvedRobloxId = typeof data.robloxId === 'number' ? data.robloxId : (effectiveRoblox?.id || (user.uid?.startsWith('roblox_') ? parseInt(user.uid.replace('roblox_', ''), 10) : undefined));
+        const resolvedRobloxDisplayName = data.robloxDisplayName || effectiveRoblox?.displayName || resolvedRobloxUsername;
+        const resolvedRobloxAvatar = data.robloxAvatarHeadshot || effectiveRoblox?.avatarHeadshot || (currentIsRoblox ? (data.photoURL || user.photoURL) : undefined);
+        const resolvedVerified = data.isRobloxVerified !== undefined ? !!data.isRobloxVerified : (effectiveRoblox ? !!effectiveRoblox.isVerifiedOwner : !!currentIsRoblox);
+
         setUserProfileData({
           coins: typeof data.coins === 'number' ? data.coins : 50,
           equippedColor: data.equippedColor || 'default',
@@ -314,13 +350,22 @@ function App() {
           customThemeConfig: data.customThemeConfig || undefined,
           customColorConfig: data.customColorConfig || undefined,
           customFontConfig: data.customFontConfig || undefined,
-          displayName: data.displayName || user.displayName || '',
-          photoURL: data.photoURL || user.photoURL || '',
+          displayName: data.displayName || user.displayName || resolvedRobloxDisplayName || '',
+          photoURL: data.photoURL || user.photoURL || resolvedRobloxAvatar || '',
           lastDailyBonusDate: data.lastDailyBonusDate || '',
           lastCustomTitleRequestTime: typeof data.lastCustomTitleRequestTime === 'number' ? data.lastCustomTitleRequestTime : undefined,
+          robloxUsername: resolvedRobloxUsername,
+          robloxId: resolvedRobloxId,
+          robloxDisplayName: resolvedRobloxDisplayName,
+          robloxAvatarHeadshot: resolvedRobloxAvatar,
+          robloxAvatarFull: data.robloxAvatarFull || effectiveRoblox?.avatarFull || '',
+          robloxProfileUrl: data.robloxProfileUrl || (resolvedRobloxId ? `https://www.roblox.com/users/${resolvedRobloxId}/profile` : undefined),
+          authProvider: data.authProvider || (currentIsRoblox ? 'roblox' : undefined),
+          isRobloxVerified: resolvedVerified,
+          robloxAccount: effectiveRoblox || undefined,
         });
       } else {
-        const initialProfile = {
+        const initialProfile: any = {
           coins: 50,
           equippedColor: 'default',
           purchasedColors: ['default'],
@@ -330,10 +375,20 @@ function App() {
           purchasedFonts: ['default'],
           equippedTitle: 'default',
           purchasedTitles: ['default'],
-          displayName: user.displayName || '',
-          photoURL: user.photoURL || '',
+          displayName: user.displayName || currentActiveRoblox?.displayName || currentActiveRoblox?.name || '',
+          photoURL: user.photoURL || currentActiveRoblox?.avatarHeadshot || '',
           email: user.email || ''
         };
+        if (currentActiveRoblox) {
+          initialProfile.robloxUsername = currentActiveRoblox.name;
+          initialProfile.robloxId = currentActiveRoblox.id;
+          initialProfile.robloxDisplayName = currentActiveRoblox.displayName || currentActiveRoblox.name;
+          initialProfile.robloxAvatarHeadshot = currentActiveRoblox.avatarHeadshot || initialProfile.photoURL;
+          initialProfile.robloxProfileUrl = `https://www.roblox.com/users/${currentActiveRoblox.id}/profile`;
+          initialProfile.authProvider = 'roblox';
+          initialProfile.isRobloxVerified = true;
+          initialProfile.robloxAccount = currentActiveRoblox;
+        }
         setDoc(userRef, initialProfile, { merge: true }).catch(console.error);
       }
     }, (err) => {
@@ -761,20 +816,71 @@ function App() {
     testConnection();
   }, []);
 
-  // Auth listener
+  // Auth listener (Firebase Auth + Roblox Local Session sync)
   const prevUserRef = useRef<User | null | undefined>(undefined);
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      if (!currentUser) setUserVotes({});
-      
-      // Notify on successful login transition
-      if (prevUserRef.current === null && currentUser) {
-        toast(`Welcome back, ${currentUser.displayName || 'Voter'}! 👋`, 'success');
+    const handleSync = (firebaseUser: User | null) => {
+      if (firebaseUser) {
+        setUser(firebaseUser);
+        if (prevUserRef.current === null && firebaseUser) {
+          toast(`Welcome back, ${firebaseUser.displayName || 'Voter'}! 👋`, 'success');
+        }
+        prevUserRef.current = firebaseUser;
+        return;
       }
-      prevUserRef.current = currentUser;
+
+      // Check stored Roblox profile session
+      const storedRoblox = getStoredRobloxUser();
+      if (storedRoblox) {
+        const virtualUser: any = {
+          uid: `roblox_${storedRoblox.id}`,
+          displayName: storedRoblox.displayName || storedRoblox.name,
+          photoURL: storedRoblox.avatarHeadshot || '',
+          email: null,
+          isRoblox: true,
+          robloxAccount: storedRoblox
+        };
+        setUser(virtualUser);
+        if (prevUserRef.current === null) {
+          toast(`Welcome back, ${virtualUser.displayName}! 👋`, 'success');
+        }
+        prevUserRef.current = virtualUser;
+      } else {
+        setUser(null);
+        setUserVotes({});
+        prevUserRef.current = null;
+      }
+    };
+
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      handleSync(currentUser);
     });
-    return () => unsubscribe();
+
+    const handleCustomRobloxEvent = (e: any) => {
+      const robloxUser = e.detail;
+      if (robloxUser) {
+        const virtualUser: any = {
+          uid: `roblox_${robloxUser.id}`,
+          displayName: robloxUser.displayName || robloxUser.name,
+          photoURL: robloxUser.avatarHeadshot || '',
+          email: null,
+          isRoblox: true,
+          robloxAccount: robloxUser
+        };
+        setUser(virtualUser);
+        toast(`Signed in as @${robloxUser.name}! 🎮`, 'success');
+      } else if (!auth.currentUser) {
+        setUser(null);
+        setUserVotes({});
+      }
+    };
+
+    window.addEventListener('bloxvote_roblox_auth_change', handleCustomRobloxEvent);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('bloxvote_roblox_auth_change', handleCustomRobloxEvent);
+    };
   }, [toast]);
 
   // Games listener
@@ -793,7 +899,7 @@ function App() {
       setIsLoading(false);
 
       // If empty, add some initial games - ONLY if user is authenticated
-      if (gamesData.length === 0 && !isLoading && auth.currentUser) {
+      if (gamesData.length === 0 && !isLoading && (auth.currentUser || user)) {
         seedInitialGames();
       }
     }, (error) => {
@@ -923,7 +1029,8 @@ function App() {
 
   const handleVote = async (gameId: string) => {
     if (!user) {
-      signIn();
+      setSignInInitialTab('roblox');
+      setIsSignInModalOpen(true);
       return;
     }
 
@@ -993,7 +1100,7 @@ function App() {
   // Shop Handlers
   const handleBuyItem = async (type: 'color' | 'theme' | 'font' | 'title', item: NameColorItem | BackgroundThemeItem | FontItem | TitleItem): Promise<boolean> => {
     if (!user) {
-      signIn();
+      setIsSignInModalOpen(true);
       return false;
     }
 
@@ -1080,7 +1187,7 @@ function App() {
 
   const handleRequestCustomTitle = async (requestedTitle: string): Promise<boolean> => {
     if (!user) {
-      signIn();
+      setIsSignInModalOpen(true);
       return false;
     }
 
@@ -1170,7 +1277,7 @@ function App() {
 
   const handleSaveCustomTheme = async (config: CustomThemeConfig): Promise<boolean> => {
     if (!user) {
-      signIn();
+      setIsSignInModalOpen(true);
       return false;
     }
 
@@ -1770,13 +1877,32 @@ function App() {
                   </button>
                 </div>
               ) : (
-                <button
-                  onClick={signIn}
-                  className="flex items-center gap-2 rounded-full bg-white px-6 py-2.5 text-xs sm:text-sm font-bold text-black transition-all hover:bg-zinc-200 active:scale-95 shadow-lg"
-                >
-                  <LogIn size={16} />
-                  Sign In with Google
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setSignInInitialTab('roblox_fast');
+                      setIsSignInModalOpen(true);
+                    }}
+                    className="flex items-center gap-2 rounded-full bg-gradient-to-r from-red-600 via-red-600 to-rose-600 px-4 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-black text-white transition-all hover:from-red-500 hover:to-rose-500 active:scale-95 shadow-lg shadow-red-950/50 group"
+                  >
+                    <svg className="w-4 h-4 fill-white group-hover:rotate-6 transition-transform" viewBox="0 0 24 24">
+                      <path d="M18.92 2.01L5.08 5.71 1.38 19.55l13.84-3.7 3.7-13.84zM10.8 14.88l-2.48.66.66-2.48 2.48-.66-.66 2.48z"/>
+                    </svg>
+                    <span>Sign In with Roblox</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setSignInInitialTab('google');
+                      setIsSignInModalOpen(true);
+                    }}
+                    className="hidden sm:flex items-center gap-1.5 rounded-full bg-zinc-900 border border-zinc-800 px-3.5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold text-zinc-300 transition-all hover:bg-zinc-800 hover:text-white active:scale-95"
+                    title="Sign In with Google"
+                  >
+                    <LogIn size={15} />
+                    <span>Google</span>
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -1815,7 +1941,7 @@ function App() {
               </p>
               <div className="flex flex-wrap justify-center gap-4 sm:gap-6">
                 <button
-                  onClick={() => user ? setIsAddModalOpen(true) : signIn()}
+                  onClick={() => user ? setIsAddModalOpen(true) : setIsSignInModalOpen(true)}
                   className="flex items-center gap-2.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-7 py-3.5 sm:px-8 sm:py-4 text-sm sm:text-base font-bold text-white shadow-xl shadow-blue-900/30 transition-all hover:scale-105 active:scale-95 cursor-pointer"
                 >
                   <Plus size={20} />
@@ -2043,6 +2169,7 @@ function App() {
         profileData={userProfileData}
         onVote={handleVote}
         onOpenShop={() => setIsShopOpen(true)}
+        onOpenLinkRoblox={() => setIsLinkRobloxModalOpen(true)}
       />
 
       <ShopModal
@@ -2115,6 +2242,33 @@ function App() {
         customAdminFonts={customAdminFonts}
         onEquipFont={async (fontId) => { await handleEquipItem('font', fontId); }}
         onSaveCustomFont={handleSaveCustomFont}
+        onOpenLinkRoblox={() => setIsLinkRobloxModalOpen(true)}
+        onUnlinkRoblox={async () => {
+          if (user) {
+            await unlinkRobloxAccount();
+            toast('Roblox account unlinked from this profile.', 'info');
+          }
+        }}
+      />
+
+      {/* 🔐 BloxVote Sign In / Connect Modal */}
+      <SignInModal
+        isOpen={isSignInModalOpen}
+        onClose={() => setIsSignInModalOpen(false)}
+        initialTab={signInInitialTab}
+        onSuccess={() => {
+          toast('Successfully signed in! Welcome to BloxVote. 🎮', 'success');
+        }}
+      />
+
+      {/* 🔗 Connect / Switch Roblox Account Modal */}
+      <SignInModal
+        isOpen={isLinkRobloxModalOpen}
+        onClose={() => setIsLinkRobloxModalOpen(false)}
+        isLinkingOnly={true}
+        onSuccess={() => {
+          toast('Roblox account connected successfully! 🌟', 'success');
+        }}
       />
 
       <BloxVoteLoadingScreen
