@@ -239,7 +239,7 @@ export default function SignInModal({
     }
   };
 
-  const handleLaunchRobloxOAuth = async () => {
+  const handleLaunchRobloxOAuth = () => {
     setIsOAuthLoading(true);
     setOauthError(null);
     playSound('click');
@@ -247,21 +247,6 @@ export default function SignInModal({
     const effectiveClientId = clientIdInput.trim() || '6105930285419261461';
     if (clientIdInput.trim()) {
       localStorage.setItem('custom_roblox_client_id', clientIdInput.trim());
-    }
-
-    // Check if OAuth endpoint exists on current server
-    try {
-      const checkRes = await fetch('/api/roblox/oauth/config');
-      if (!checkRes.ok) {
-        throw new Error('OAuth server endpoint is not available on this static domain.');
-      }
-    } catch {
-      setIsOAuthLoading(false);
-      setOauthError(
-        'OAuth 2.0 requires a server backend. Since bloxvote.com is hosted on a static domain (GitHub Pages), please use the "Bio Verification" tab — it is instant and works 100% everywhere without setup!'
-      );
-      playSound('error');
-      return;
     }
 
     const clientIdParam = `?client_id=${encodeURIComponent(effectiveClientId)}`;
