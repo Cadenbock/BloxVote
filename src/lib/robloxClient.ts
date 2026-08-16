@@ -7,61 +7,72 @@ interface VerifyBioResult {
   error?: string;
 }
 
-const CORS_PROXIES = [
-  (targetUrl: string) => `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,
-  (targetUrl: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
-  (targetUrl: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
-];
-
 /**
- * Fetch a URL with automatic fallback across multiple CORS proxies if needed.
+ * Robust helper to fetch JSON via multiple GET-based CORS proxies.
+ * Does not use POST so it avoids CORS preflight failures on static hosts (like bloxvote.com).
  */
-async function fetchWithCorsFallback(targetUrl: string, options: RequestInit = {}): Promise<Response> {
-  // First attempt direct fetch (e.g. if the target supports CORS or on local backend)
+async function fetchJsonWithGetProxies(targetUrl: string): Promise<any> {
+  // Strategy 1: Direct fetch
   try {
-    const directRes = await fetch(targetUrl, options);
+    const directRes = await fetch(targetUrl);
     if (directRes.ok) {
-      return directRes;
+      return await directRes.json();
     }
-  } catch (err) {
-    // Continue to CORS proxies
+  } catch {
+    // Continue
   }
 
-  // Attempt via CORS proxies
-  for (const proxyGenerator of CORS_PROXIES) {
-    try {
-      const proxiedUrl = proxyGenerator(targetUrl);
-      const res = await fetch(proxiedUrl, {
-        ...options,
-        // Remove bodies for GET requests through some proxies
-        headers: {
-          'Accept': 'application/json',
-          ...(options.headers || {})
-        }
-      });
-      if (res.ok) {
-        return res;
+  // Strategy 2: AllOrigins JSON API (Always responds with CORS headers for GET requests)
+  try {
+    const allOriginsUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&_t=${Date.now()}`;
+    const res = await fetch(allOriginsUrl);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && typeof data.contents === 'string') {
+        return JSON.parse(data.contents);
       }
-    } catch (proxyErr) {
-      // Try next proxy
     }
+  } catch {
+    // Continue
   }
 
-  throw new Error(`Failed to reach ${targetUrl} directly or through proxies.`);
+  // Strategy 3: CodeTabs Proxy
+  try {
+    const codeTabsUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`;
+    const res = await fetch(codeTabsUrl);
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Continue
+  }
+
+  // Strategy 4: Corsproxy.io
+  try {
+    const corsProxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`;
+    const res = await fetch(corsProxyUrl);
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Continue
+  }
+
+  throw new Error('Unable to reach Roblox API via proxies.');
 }
 
 /**
  * Robust Roblox user lookup that works everywhere (Cloud Run, Local, GitHub Pages, Custom Domains).
  */
-export async function lookupRobloxAccount(username: string): Promise<RobloxAccountInfo> {
-  const cleanUsername = username.trim();
-  if (!cleanUsername) {
-    throw new Error('Please enter a Roblox username.');
+export async function lookupRobloxAccount(input: string): Promise<RobloxAccountInfo> {
+  const cleanInput = input.trim();
+  if (!cleanInput) {
+    throw new Error('Please enter a Roblox username or User ID.');
   }
 
-  // 1. Try local server API first
+  // 1. Try local server API first if available
   try {
-    const localRes = await fetch(`/api/roblox-user?username=${encodeURIComponent(cleanUsername)}`);
+    const localRes = await fetch(`/api/roblox-user?username=${encodeURIComponent(cleanInput)}`);
     const contentType = localRes.headers.get('content-type') || '';
     if (localRes.ok && contentType.includes('application/json')) {
       const data = await localRes.json();
@@ -73,83 +84,76 @@ export async function lookupRobloxAccount(username: string): Promise<RobloxAccou
       }
     }
   } catch (localErr: any) {
-    // If it's a specific user not found error from server, throw it
     if (localErr?.message && !localErr.message.includes('fetch') && !localErr.message.includes('JSON')) {
       throw localErr;
     }
   }
 
-  // 2. Direct / CORS Proxy Fallback (Guaranteed to work on GitHub Pages / static hosting)
-  let robloxUserId: number | null = null;
-  let robloxName: string = cleanUsername;
-  let robloxDisplayName: string = cleanUsername;
+  // Check if input is a profile URL (e.g. roblox.com/users/4320852390/profile) or direct numeric ID
+  const urlMatch = cleanInput.match(/roblox\.com\/users\/(\d+)/i);
+  const numericId = urlMatch ? parseInt(urlMatch[1], 10) : (/^\d+$/.test(cleanInput) ? parseInt(cleanInput, 10) : null);
 
-  // Query Roblox Users API: POST https://users.roblox.com/v1/usernames/users
-  const lookupPayload = JSON.stringify({
-    usernames: [cleanUsername],
-    excludeBannedUsers: false
-  });
-
-  let foundInApi = false;
-
-  for (const proxyGenerator of CORS_PROXIES) {
+  if (numericId) {
+    // Lookup by User ID via GET https://users.roblox.com/v1/users/{numericId}
     try {
-      const proxyUrl = proxyGenerator('https://users.roblox.com/v1/usernames/users');
-      const res = await fetch(proxyUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: lookupPayload
-      });
-
-      if (res.ok) {
-        const result = await res.json();
-        if (result && Array.isArray(result.data) && result.data.length > 0) {
-          const u = result.data[0];
-          robloxUserId = u.id;
-          robloxName = u.name;
-          robloxDisplayName = u.displayName || u.name;
-          foundInApi = true;
-          break;
-        }
+      const userData = await fetchJsonWithGetProxies(`https://users.roblox.com/v1/users/${numericId}`);
+      if (userData && (userData.name || userData.id)) {
+        const defaultHeadshot = `https://www.roblox.com/headshot-thumbnail/image?userId=${userData.id}&width=420&height=420&format=png`;
+        const defaultFull = `https://www.roblox.com/avatar-thumbnail/image?userId=${userData.id}&width=420&height=420&format=png`;
+        return {
+          id: userData.id,
+          name: userData.name,
+          displayName: userData.displayName || userData.name,
+          avatarHeadshot: defaultHeadshot,
+          avatarFull: defaultFull,
+          isVerifiedOwner: false
+        };
       }
     } catch {
-      // Continue to next proxy
+      // If proxy fails, we can still construct a valid profile using the ID!
+      const defaultHeadshot = `https://www.roblox.com/headshot-thumbnail/image?userId=${numericId}&width=420&height=420&format=png`;
+      const defaultFull = `https://www.roblox.com/avatar-thumbnail/image?userId=${numericId}&width=420&height=420&format=png`;
+      return {
+        id: numericId,
+        name: `User_${numericId}`,
+        displayName: `User #${numericId}`,
+        avatarHeadshot: defaultHeadshot,
+        avatarFull: defaultFull,
+        isVerifiedOwner: false
+      };
     }
   }
 
-  if (!foundInApi || !robloxUserId) {
-    throw new Error(`Roblox user "${cleanUsername}" was not found. Please verify the exact username.`);
-  }
-
-  // Fetch avatar headshot and full avatar
-  const defaultHeadshot = `https://www.roblox.com/headshot-thumbnail/image?userId=${robloxUserId}&width=150&height=150&format=png`;
-  const defaultFull = `https://www.roblox.com/avatar-thumbnail/image?userId=${robloxUserId}&width=420&height=420&format=png`;
-
-  let avatarHeadshot = defaultHeadshot;
-  let avatarFull = defaultFull;
-
+  // 2. Search Roblox User by username using GET https://users.roblox.com/v1/users/search?keyword=...
+  const searchUrl = `https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(cleanInput)}&limit=10`;
+  
   try {
-    const thumbUrl = `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${robloxUserId}&size=150x150&format=Png&isCircular=false`;
-    const thumbRes = await fetchWithCorsFallback(thumbUrl);
-    const thumbData = await thumbRes.json();
-    if (thumbData?.data?.[0]?.imageUrl) {
-      avatarHeadshot = thumbData.data[0].imageUrl;
+    const searchData = await fetchJsonWithGetProxies(searchUrl);
+    if (searchData && Array.isArray(searchData.data) && searchData.data.length > 0) {
+      // Find exact case-insensitive match or first item
+      const exactMatch = searchData.data.find(
+        (u: any) => u.name?.toLowerCase() === cleanInput.toLowerCase() || u.displayName?.toLowerCase() === cleanInput.toLowerCase()
+      ) || searchData.data[0];
+
+      if (exactMatch && exactMatch.id) {
+        const defaultHeadshot = `https://www.roblox.com/headshot-thumbnail/image?userId=${exactMatch.id}&width=420&height=420&format=png`;
+        const defaultFull = `https://www.roblox.com/avatar-thumbnail/image?userId=${exactMatch.id}&width=420&height=420&format=png`;
+
+        return {
+          id: exactMatch.id,
+          name: exactMatch.name,
+          displayName: exactMatch.displayName || exactMatch.name,
+          avatarHeadshot: defaultHeadshot,
+          avatarFull: defaultFull,
+          isVerifiedOwner: false
+        };
+      }
     }
-  } catch {
-    // Keep default
+  } catch (searchErr) {
+    console.warn('Roblox search notice:', searchErr);
   }
 
-  return {
-    id: robloxUserId,
-    name: robloxName,
-    displayName: robloxDisplayName,
-    avatarHeadshot,
-    avatarFull,
-    isVerifiedOwner: false
-  };
+  throw new Error(`Roblox user "${cleanInput}" was not found. Please verify the exact username or enter your numeric Roblox User ID.`);
 }
 
 /**
@@ -187,39 +191,31 @@ export async function verifyRobloxBioOwnership(userId: number, code: string): Pr
     // Continue to proxy fallback
   }
 
-  // 2. Direct / CORS Proxy Fallback for static hosting
-  const robloxUserUrl = `https://users.roblox.com/v1/users/${userId}?_t=${Date.now()}`;
+  // 2. Direct / GET Proxy Fallback for static hosting
+  const robloxUserUrl = `https://users.roblox.com/v1/users/${userId}`;
   
-  for (const proxyGenerator of CORS_PROXIES) {
-    try {
-      const proxyUrl = proxyGenerator(robloxUserUrl);
-      const res = await fetch(proxyUrl, {
-        headers: { 'Accept': 'application/json' },
-        cache: 'no-store'
-      });
+  try {
+    const userData = await fetchJsonWithGetProxies(robloxUserUrl);
+    if (userData) {
+      const liveBio = userData.description || '';
+      const cleanBio = liveBio.replace(/\s+/g, ' ').trim();
+      const isVerified = cleanBio.toLowerCase().includes(cleanCode.toLowerCase());
 
-      if (res.ok) {
-        const userData = await res.json();
-        const liveBio = userData.description || '';
-        const cleanBio = liveBio.replace(/\s+/g, ' ').trim();
-        const isVerified = cleanBio.toLowerCase().includes(cleanCode.toLowerCase());
-
-        return {
-          verified: isVerified,
-          currentBio: liveBio,
-          message: isVerified
-            ? 'Roblox account ownership verified successfully!'
-            : `Code "${cleanCode}" was not found in your Roblox "About" section yet.`
-        };
-      }
-    } catch {
-      // Continue to next proxy
+      return {
+        verified: isVerified,
+        currentBio: liveBio,
+        message: isVerified
+          ? 'Roblox account ownership verified successfully!'
+          : `Code "${cleanCode}" was not found in your Roblox "About" section yet.`
+      };
     }
+  } catch (err: any) {
+    console.warn('Bio verification fallback notice:', err);
   }
 
   return {
     verified: false,
     currentBio: '',
-    error: 'Could not reach Roblox profile to verify bio. Please check your internet connection and try again.'
+    error: 'Could not reach Roblox profile to verify bio. Please check your internet connection or verify your username/ID and try again.'
   };
 }

@@ -405,7 +405,7 @@ export default function SignInModal({
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
                       <User size={13} className="text-amber-400" />
-                      <span>Enter Your Roblox Username</span>
+                      <span>Enter Your Roblox Username or User ID</span>
                     </label>
                     <span className="text-[10px] text-zinc-500">Auto-detects account</span>
                   </div>
@@ -414,7 +414,7 @@ export default function SignInModal({
                       type="text"
                       value={usernameInput}
                       onChange={(e) => setUsernameInput(e.target.value)}
-                      placeholder="e.g. Builderman, Cadenbock..."
+                      placeholder="e.g. Cadenb00ck, Builderman, or User ID (4320852390)..."
                       className="w-full rounded-xl border border-zinc-700 bg-zinc-900 pl-11 pr-10 py-3 text-sm text-white placeholder-zinc-500 focus:border-amber-500 focus:outline-none transition-all"
                       autoFocus
                     />
@@ -430,9 +430,14 @@ export default function SignInModal({
                 </div>
 
                 {searchError && (
-                  <div className="p-3 rounded-xl bg-red-600/90 text-white text-xs flex items-center gap-2 border border-red-500 shadow-md">
-                    <AlertCircle size={16} className="shrink-0" />
-                    <span>{searchError}</span>
+                  <div className="p-3 rounded-xl bg-red-600/90 text-white text-xs flex flex-col gap-1 border border-red-500 shadow-md">
+                    <div className="flex items-center gap-2 font-bold">
+                      <AlertCircle size={16} className="shrink-0" />
+                      <span>{searchError}</span>
+                    </div>
+                    <p className="text-[11px] text-red-100 pl-6">
+                      Tip: You can also enter your numeric Roblox User ID (e.g. <code>4320852390</code>) or your Roblox profile link directly!
+                    </p>
                   </div>
                 )}
 
