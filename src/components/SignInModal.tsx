@@ -16,10 +16,12 @@ import {
   Sparkles,
   ArrowRight,
   Lock,
-  RefreshCw
+  RefreshCw,
+  Zap
 } from 'lucide-react';
 import { RobloxAccountInfo } from '../types';
 import { signInWithGoogle, signInWithRoblox, linkRobloxAccount } from '../firebase';
+import { lookupRobloxAccount, verifyRobloxBioOwnership } from '../lib/robloxClient';
 import { playSound } from '../lib/sounds';
 import confetti from 'canvas-confetti';
 
@@ -150,19 +152,14 @@ export default function SignInModal({
     setVerificationSuccess(false);
 
     try {
-      const res = await fetch(`/api/roblox-user?username=${encodeURIComponent(username.trim())}`);
-      const data = await res.json();
-
-      if (!res.ok || !data.success || !data.user) {
-        if (showErrors) setSearchError(data.error || 'Roblox user not found. Please check spelling.');
-        setFoundUser(null);
-      } else {
-        setFoundUser(data.user);
-        setSearchError(null);
-        localStorage.setItem('last_roblox_username', data.user.name);
+      const user = await lookupRobloxAccount(username.trim());
+      setFoundUser(user);
+      setSearchError(null);
+      localStorage.setItem('last_roblox_username', user.name);
+    } catch (err: any) {
+      if (showErrors) {
+        setSearchError(err?.message || 'Roblox user not found. Please check spelling.');
       }
-    } catch {
-      if (showErrors) setSearchError('Could not reach Roblox service. Please try again.');
       setFoundUser(null);
     } finally {
       setIsSearching(false);
@@ -201,18 +198,9 @@ export default function SignInModal({
     playSound('click');
 
     try {
-      const res = await fetch('/api/verify-roblox-bio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: foundUser.id,
-          code: verificationCode
-        })
-      });
+      const result = await verifyRobloxBioOwnership(foundUser.id, verificationCode);
 
-      const data = await res.json();
-
-      if (data.verified) {
+      if (result.verified) {
         setVerificationSuccess(true);
         playSound('fanfare');
         confetti({
@@ -237,21 +225,21 @@ export default function SignInModal({
           onClose();
         }, 600);
       } else {
-        const bioSnippet = data.currentBio ? `"${data.currentBio}"` : '(empty)';
+        const bioSnippet = result.currentBio ? `"${result.currentBio}"` : '(empty)';
         setVerificationError(
-          data.message || `Code "${verificationCode}" was not found in your Roblox "About" section. Current bio: ${bioSnippet}. Please paste the code, click Save on Roblox, and try again.`
+          result.error || result.message || `Code "${verificationCode}" was not found in your Roblox "About" section. Current bio: ${bioSnippet}. Please paste the code, click Save on Roblox, and try again.`
         );
         playSound('error');
       }
-    } catch {
-      setVerificationError('Error checking Roblox bio. Please verify your connection and try again.');
+    } catch (err: any) {
+      setVerificationError(err?.message || 'Error checking Roblox bio. Please verify your connection and try again.');
       playSound('error');
     } finally {
       setIsVerifyingBio(false);
     }
   };
 
-  const handleLaunchRobloxOAuth = () => {
+  const handleLaunchRobloxOAuth = async () => {
     setIsOAuthLoading(true);
     setOauthError(null);
     playSound('click');
@@ -259,6 +247,21 @@ export default function SignInModal({
     const effectiveClientId = clientIdInput.trim() || '6105930285419261461';
     if (clientIdInput.trim()) {
       localStorage.setItem('custom_roblox_client_id', clientIdInput.trim());
+    }
+
+    // Check if OAuth endpoint exists on current server
+    try {
+      const checkRes = await fetch('/api/roblox/oauth/config');
+      if (!checkRes.ok) {
+        throw new Error('OAuth server endpoint is not available on this static domain.');
+      }
+    } catch {
+      setIsOAuthLoading(false);
+      setOauthError(
+        'OAuth 2.0 requires a server backend. Since bloxvote.com is hosted on a static domain (GitHub Pages), please use the "Bio Verification" tab — it is instant and works 100% everywhere without setup!'
+      );
+      playSound('error');
+      return;
     }
 
     const clientIdParam = `?client_id=${encodeURIComponent(effectiveClientId)}`;
@@ -609,12 +612,23 @@ export default function SignInModal({
                 </div>
 
                 {oauthError && (
-                  <div className="p-3.5 rounded-xl bg-red-600/90 text-white text-xs space-y-1.5 border border-red-500 shadow-lg">
+                  <div className="p-3.5 rounded-xl bg-red-600/90 text-white text-xs space-y-2.5 border border-red-500 shadow-lg">
                     <div className="flex items-center gap-2 font-bold">
                       <AlertCircle size={16} className="shrink-0" />
-                      <span>Authorization Error</span>
+                      <span>Authorization Notice</span>
                     </div>
                     <p className="text-[11px] text-red-100 leading-normal">{oauthError}</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('roblox_fast');
+                        playSound('click');
+                      }}
+                      className="w-full py-2 px-3 rounded-lg bg-white text-zinc-950 font-black text-xs hover:bg-zinc-100 active:scale-95 transition-all flex items-center justify-center gap-1.5 shadow"
+                    >
+                      <KeyRound size={14} className="text-amber-600" />
+                      <span>Switch to Bio Verification (Instant)</span>
+                    </button>
                   </div>
                 )}
 
