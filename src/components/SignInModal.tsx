@@ -182,7 +182,7 @@ export default function SignInModal({
 
       debounceTimerRef.current = setTimeout(() => {
         lookupRobloxUser(usernameInput, true);
-      }, 400);
+      }, 550);
 
       return () => {
         if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
@@ -414,18 +414,37 @@ export default function SignInModal({
                       type="text"
                       value={usernameInput}
                       onChange={(e) => setUsernameInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+                          lookupRobloxUser(usernameInput, true);
+                        }
+                      }}
                       placeholder="e.g. Cadenb00ck, Builderman, or User ID (4320852390)..."
-                      className="w-full rounded-xl border border-zinc-700 bg-zinc-900 pl-11 pr-10 py-3 text-sm text-white placeholder-zinc-500 focus:border-amber-500 focus:outline-none transition-all"
+                      className="w-full rounded-xl border border-zinc-700 bg-zinc-900 pl-11 pr-24 py-3 text-sm text-white placeholder-zinc-500 focus:border-amber-500 focus:outline-none transition-all"
                       autoFocus
                     />
                     <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400">
                       <Search size={16} />
                     </div>
-                    {isSearching && (
-                      <div className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 animate-spin">
-                        <Loader2 size={16} />
-                      </div>
-                    )}
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                      {isSearching ? (
+                        <div className="p-1.5 text-zinc-400 animate-spin">
+                          <Loader2 size={16} />
+                        </div>
+                      ) : usernameInput.trim() ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+                            lookupRobloxUser(usernameInput, true);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs transition-all shadow cursor-pointer active:scale-95"
+                        >
+                          Find
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
 
