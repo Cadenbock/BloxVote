@@ -53,43 +53,38 @@ async function fetchWithResilientFallbacks(urls: string[]): Promise<any> {
 }
 
 /**
- * Robust Roblox user lookup that works everywhere (Cloud Run, Local, GitHub Pages, bloxvote.com).
+ * Search Roblox players matching or close to the search query.
+ * Returns a list of players with avatar thumbnails, usernames, display names, and IDs.
  */
-export async function lookupRobloxAccount(input: string): Promise<RobloxAccountInfo> {
-  const cleanInput = input.trim();
+export async function searchRobloxUsers(query: string): Promise<RobloxAccountInfo[]> {
+  const cleanInput = query.trim();
   if (!cleanInput) {
-    throw new Error('Please enter a Roblox username or User ID.');
+    return [];
   }
 
-  // 1. Try local server API first (only if on local dev or Cloud Run backend)
-  if (!isStaticHosting()) {
-    try {
-      const localRes = await fetch(`/api/roblox-user?username=${encodeURIComponent(cleanInput)}`);
-      const contentType = localRes.headers.get('content-type') || '';
-      if (localRes.ok && contentType.includes('application/json')) {
-        const data = await localRes.json();
-        if (data.success && data.user) {
-          return data.user;
-        }
-        if (data.error) {
-          throw new Error(data.error);
-        }
-      }
-    } catch (localErr: any) {
-      if (localErr?.message && !localErr.message.includes('fetch') && !localErr.message.includes('JSON')) {
-        throw localErr;
-      }
-    }
-  }
+  const results: RobloxAccountInfo[] = [];
+  const seenIds = new Set<number>();
 
-  // 2. Check if input is a direct numeric ID or profile URL (e.g. roblox.com/users/4320852390/profile)
+  // Helper to add player cleanly
+  const addPlayer = (id: number, name: string, displayName?: string, isVerifiedBadge?: boolean) => {
+    if (!id || seenIds.has(id)) return;
+    seenIds.add(id);
+    results.push({
+      id,
+      name: name || `User_${id}`,
+      displayName: displayName || name || `User #${id}`,
+      avatarHeadshot: `https://www.roblox.com/headshot-thumbnail/image?userId=${id}&width=420&height=420&format=png`,
+      avatarFull: `https://www.roblox.com/avatar-thumbnail/image?userId=${id}&width=420&height=420&format=png`,
+      hasVerifiedBadge: Boolean(isVerifiedBadge),
+      isVerifiedOwner: false
+    });
+  };
+
+  // 1. If query is numeric ID or profile URL, fetch that exact user first
   const urlMatch = cleanInput.match(/roblox\.com\/users\/(\d+)/i);
   const numericId = urlMatch ? parseInt(urlMatch[1], 10) : (/^\d+$/.test(cleanInput) ? parseInt(cleanInput, 10) : null);
 
   if (numericId) {
-    const defaultHeadshot = `https://www.roblox.com/headshot-thumbnail/image?userId=${numericId}&width=420&height=420&format=png`;
-    const defaultFull = `https://www.roblox.com/avatar-thumbnail/image?userId=${numericId}&width=420&height=420&format=png`;
-
     try {
       const userData = await fetchWithResilientFallbacks([
         `https://users.roproxy.com/v1/users/${numericId}`,
@@ -99,29 +94,16 @@ export async function lookupRobloxAccount(input: string): Promise<RobloxAccountI
       ]);
 
       if (userData && (userData.name || userData.id)) {
-        return {
-          id: userData.id || numericId,
-          name: userData.name || `User_${numericId}`,
-          displayName: userData.displayName || userData.name || `User #${numericId}`,
-          avatarHeadshot: defaultHeadshot,
-          avatarFull: defaultFull,
-          isVerifiedOwner: false
-        };
+        addPlayer(userData.id || numericId, userData.name, userData.displayName, userData.hasVerifiedBadge);
+        return results;
       }
     } catch {
-      // Fallback with standard direct avatar thumbnail URL
-      return {
-        id: numericId,
-        name: `User_${numericId}`,
-        displayName: `User #${numericId}`,
-        avatarHeadshot: defaultHeadshot,
-        avatarFull: defaultFull,
-        isVerifiedOwner: false
-      };
+      addPlayer(numericId, `User_${numericId}`, `User #${numericId}`);
+      return results;
     }
   }
 
-  // 3. Username Lookup via RoProxy Users API (Native CORS enabled for web apps)
+  // 2. Try exact username match first (prioritize exact match at top)
   try {
     const postRes = await fetch('https://users.roproxy.com/v1/usernames/users', {
       method: 'POST',
@@ -137,54 +119,70 @@ export async function lookupRobloxAccount(input: string): Promise<RobloxAccountI
 
     if (postRes.ok) {
       const result = await postRes.json();
-      if (result && Array.isArray(result.data) && result.data.length > 0) {
-        const u = result.data[0];
-        const defaultHeadshot = `https://www.roblox.com/headshot-thumbnail/image?userId=${u.id}&width=420&height=420&format=png`;
-        const defaultFull = `https://www.roblox.com/avatar-thumbnail/image?userId=${u.id}&width=420&height=420&format=png`;
-
-        return {
-          id: u.id,
-          name: u.name,
-          displayName: u.displayName || u.name,
-          avatarHeadshot: defaultHeadshot,
-          avatarFull: defaultFull,
-          isVerifiedOwner: false
-        };
+      if (result && Array.isArray(result.data)) {
+        for (const u of result.data) {
+          if (u.id) addPlayer(u.id, u.name, u.displayName, u.hasVerifiedBadge);
+        }
       }
     }
   } catch {
-    // Continue to next search strategy
+    // Continue to fuzzy search
   }
 
-  // 4. Search fallback via GET search endpoints
+  // 3. Search multi-player endpoint for all players close to or with that username
   try {
     const searchData = await fetchWithResilientFallbacks([
-      `https://users.roproxy.com/v1/users/search?keyword=${encodeURIComponent(cleanInput)}&limit=10`,
-      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(cleanInput)}&limit=10`)}`,
-      `https://api.allorigins.win/get?url=${encodeURIComponent(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(cleanInput)}&limit=10`)}`
+      `https://users.roproxy.com/v1/users/search?keyword=${encodeURIComponent(cleanInput)}&limit=20`,
+      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(cleanInput)}&limit=20`)}`,
+      `https://api.allorigins.win/get?url=${encodeURIComponent(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(cleanInput)}&limit=20`)}`,
+      `https://corsproxy.io/?url=${encodeURIComponent(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(cleanInput)}&limit=20`)}`
     ]);
 
-    if (searchData && Array.isArray(searchData.data) && searchData.data.length > 0) {
-      const exactMatch = searchData.data.find(
-        (u: any) => u.name?.toLowerCase() === cleanInput.toLowerCase() || u.displayName?.toLowerCase() === cleanInput.toLowerCase()
-      ) || searchData.data[0];
-
-      if (exactMatch && exactMatch.id) {
-        const defaultHeadshot = `https://www.roblox.com/headshot-thumbnail/image?userId=${exactMatch.id}&width=420&height=420&format=png`;
-        const defaultFull = `https://www.roblox.com/avatar-thumbnail/image?userId=${exactMatch.id}&width=420&height=420&format=png`;
-
-        return {
-          id: exactMatch.id,
-          name: exactMatch.name,
-          displayName: exactMatch.displayName || exactMatch.name,
-          avatarHeadshot: defaultHeadshot,
-          avatarFull: defaultFull,
-          isVerifiedOwner: false
-        };
+    if (searchData && Array.isArray(searchData.data)) {
+      for (const u of searchData.data) {
+        if (u.id) {
+          addPlayer(u.id, u.name, u.displayName, u.hasVerifiedBadge);
+        }
       }
     }
   } catch (searchErr) {
-    console.warn('Roblox search notice:', searchErr);
+    console.warn('Roblox player search warning:', searchErr);
+  }
+
+  // 4. If no results found yet and not on static hosting, try server route
+  if (results.length === 0 && !isStaticHosting()) {
+    try {
+      const localRes = await fetch(`/api/roblox-user?username=${encodeURIComponent(cleanInput)}`);
+      if (localRes.ok) {
+        const data = await localRes.json();
+        if (data.success && data.user) {
+          addPlayer(data.user.id, data.user.name, data.user.displayName, data.user.hasVerifiedBadge);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Robust Roblox user lookup that works everywhere (Cloud Run, Local, GitHub Pages, bloxvote.com).
+ */
+export async function lookupRobloxAccount(input: string): Promise<RobloxAccountInfo> {
+  const cleanInput = input.trim();
+  if (!cleanInput) {
+    throw new Error('Please enter a Roblox username or User ID.');
+  }
+
+  const players = await searchRobloxUsers(cleanInput);
+  if (players.length > 0) {
+    // Find exact match or return first player
+    const exact = players.find(
+      p => p.name.toLowerCase() === cleanInput.toLowerCase() || p.displayName.toLowerCase() === cleanInput.toLowerCase()
+    );
+    return exact || players[0];
   }
 
   throw new Error(`Roblox user "${cleanInput}" was not found. Please verify the exact username or enter your numeric Roblox User ID.`);
@@ -259,3 +257,4 @@ export async function verifyRobloxBioOwnership(userId: number, code: string): Pr
     error: 'Could not reach Roblox profile to verify bio. Please check your internet connection or verify your username/ID and try again.'
   };
 }
+

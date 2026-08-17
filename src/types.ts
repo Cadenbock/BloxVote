@@ -28,7 +28,7 @@ export interface Vote {
 
 export interface Activity {
   id: string;
-  type: 'vote' | 'unvote' | 'add_game' | 'delete_game' | 'feature_game' | 'unfeature_game' | 'admin_add' | 'admin_remove' | 'admin_grant_coins' | 'chat_flagged' | 'custom_title_request' | 'approve_custom_title' | 'decline_custom_title' | 'shop_buy' | 'custom_theme_unlock' | 'avatar_request' | 'approve_avatar' | 'decline_avatar';
+  type: 'vote' | 'unvote' | 'add_game' | 'delete_game' | 'feature_game' | 'unfeature_game' | 'admin_add' | 'admin_remove' | 'admin_grant_coins' | 'chat_flagged' | 'custom_title_request' | 'approve_custom_title' | 'decline_custom_title' | 'shop_buy' | 'custom_theme_unlock' | 'avatar_request' | 'approve_avatar' | 'decline_avatar' | 'admin_action' | 'feedback_submitted' | 'feedback_resolved';
   title: string;
   description: string;
   userDisplayName?: string;
@@ -145,6 +145,8 @@ export interface UserProfileData {
   photoURL?: string;
   lastDailyBonusDate?: string;
   lastCustomTitleRequestTime?: number;
+  feedbackCooldownUntil?: number;
+  lastFeedbackSubmittedAt?: any;
   // Roblox profile integration
   robloxUsername?: string;
   robloxId?: number;
@@ -291,5 +293,32 @@ export interface AppNotification {
     partnerColor?: string;
     gameId?: string;
   };
+}
+
+export type FeedbackCategory = 'bug' | 'feature' | 'game_suggestion' | 'ui_improvement' | 'general';
+export type FeedbackStatus = 'pending' | 'reviewed' | 'resolved' | 'archived';
+
+export interface UserFeedback {
+  id: string;
+  userId: string;
+  userDisplayName: string;
+  userEmail?: string;
+  userPhotoURL?: string;
+  robloxUsername?: string;
+  robloxId?: number;
+  category: FeedbackCategory;
+  rating: number; // 1 - 5
+  subject: string;
+  originalMessage: string;
+  filteredMessage: string;
+  hasProfanity: boolean;
+  flaggedWords?: string[];
+  status: FeedbackStatus;
+  adminNotes?: string;
+  adminResponse?: string;
+  respondedAt?: any;
+  respondedBy?: string;
+  createdAt: any;
+  appVersion?: string;
 }
 

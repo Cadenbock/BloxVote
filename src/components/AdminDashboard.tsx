@@ -50,7 +50,17 @@ import {
   ShieldAlert,
   XCircle,
   Award,
-  Camera
+  Camera,
+  MessageSquarePlus,
+  Lightbulb,
+  Palette,
+  MessageCircle,
+  Eye,
+  EyeOff,
+  Inbox,
+  Filter,
+  CheckCircle,
+  Archive
 } from 'lucide-react';
 import {
   BarChart,
@@ -65,7 +75,7 @@ import {
   Pie
 } from 'recharts';
 import { db, auth } from '../firebase';
-import { Game, Activity, AdminUser, AdminChatMessage, UpdateLog, ChatFlag, CustomTitleRequest, AvatarRequest } from '../types';
+import { Game, Activity, AdminUser, AdminChatMessage, UpdateLog, ChatFlag, CustomTitleRequest, AvatarRequest, UserFeedback, FeedbackCategory, FeedbackStatus } from '../types';
 import { useToast } from './Toast';
 import { logActivity } from '../lib/activity';
 import { cn } from '../lib/utils';
@@ -80,7 +90,7 @@ interface AdminDashboardProps {
   customAdminFonts?: any[];
 }
 
-type AdminTab = 'overview' | 'games' | 'coins' | 'bans' | 'avatars' | 'titles' | 'announcement' | 'updates' | 'chat' | 'admins' | 'activity';
+type AdminTab = 'overview' | 'games' | 'coins' | 'bans' | 'avatars' | 'titles' | 'announcement' | 'updates' | 'chat' | 'feedback' | 'admins' | 'activity';
 
 export default function AdminDashboard({ isOpen, onClose, games, onVote, customAdminTitles = [], customAdminFonts = [] }: AdminDashboardProps) {
   const { toast } = useToast();
@@ -146,6 +156,27 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
   const [logCategory, setLogCategory] = useState<'major' | 'feature' | 'fix' | 'balance'>('feature');
   const [logChangesText, setLogChangesText] = useState('');
   const [isSavingLog, setIsSavingLog] = useState(false);
+
+  // User Feedback State
+  const [feedbacks, setFeedbacks] = useState<UserFeedback[]>([]);
+  const [feedbackCategoryFilter, setFeedbackCategoryFilter] = useState<FeedbackCategory | 'all'>('all');
+  const [feedbackStatusFilter, setFeedbackStatusFilter] = useState<FeedbackStatus | 'all'>('all');
+  const [feedbackSearch, setFeedbackSearch] = useState('');
+  const [feedbackOnlyFlagged, setFeedbackOnlyFlagged] = useState(false);
+  const [revealedProfanityMap, setRevealedProfanityMap] = useState<Record<string, boolean>>({});
+  const [replyingFeedback, setReplyingFeedback] = useState<UserFeedback | null>(null);
+  const [replyMessageInput, setReplyMessageInput] = useState('');
+  const [isSendingReply, setIsSendingReply] = useState(false);
+  const [deletingFeedback, setDeletingFeedback] = useState<UserFeedback | null>(null);
+  const [isDeletingFeedback, setIsDeletingFeedback] = useState(false);
+  const [bountyFeedback, setBountyFeedback] = useState<UserFeedback | null>(null);
+  const [bountyAmount, setBountyAmount] = useState<number>(100);
+  const [bountyReason, setBountyReason] = useState<string>('Bug Bounty & Helpful Feedback');
+  const [isGrantingBounty, setIsGrantingBounty] = useState(false);
+
+  // Roblox OAuth 2.0 Global Setting
+  const [robloxOAuthEnabled, setRobloxOAuthEnabled] = useState(false);
+  const [isTogglingRobloxOAuth, setIsTogglingRobloxOAuth] = useState(false);
 
   // Modal states
   const [featuringGameModal, setFeaturingGameModal] = useState<Game | null>(null);
@@ -633,6 +664,45 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
     return () => unsubscribe();
   }, [isOpen]);
 
+  // Real-time Roblox OAuth global setting listener
+  useEffect(() => {
+    if (!isOpen) return;
+    const oauthDocRef = doc(db, 'settings', 'robloxOAuth');
+    const unsubscribe = onSnapshot(oauthDocRef, (snap) => {
+      if (snap.exists()) {
+        setRobloxOAuthEnabled(Boolean(snap.data()?.enabled));
+      } else {
+        setRobloxOAuthEnabled(false);
+      }
+    }, (err) => {
+      console.warn('OAuth settings listener error:', err);
+    });
+    return () => unsubscribe();
+  }, [isOpen]);
+
+  // Real-time User Feedbacks Listener
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const feedbackQuery = query(
+      collection(db, 'userFeedback'),
+      orderBy('createdAt', 'desc'),
+      limit(100)
+    );
+
+    const unsubscribe = onSnapshot(feedbackQuery, (snapshot) => {
+      const list = snapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      } as UserFeedback));
+      setFeedbacks(list);
+    }, (err) => {
+      console.warn('User feedback listener warning:', err);
+    });
+
+    return () => unsubscribe();
+  }, [isOpen]);
+
   // Real-time Activities listener
   useEffect(() => {
     if (!isOpen) return;
@@ -686,6 +756,192 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
 
     return () => unsubscribe();
   }, [isOpen]);
+
+  const handleToggleRobloxOAuth = async () => {
+    if (isTogglingRobloxOAuth) return;
+    setIsTogglingRobloxOAuth(true);
+    const newStatus = !robloxOAuthEnabled;
+    try {
+      await setDoc(doc(db, 'settings', 'robloxOAuth'), {
+        enabled: newStatus,
+        updatedAt: serverTimestamp(),
+        updatedBy: auth.currentUser?.email || auth.currentUser?.uid || 'Admin'
+      }, { merge: true });
+
+      await logActivity(
+        'admin_action',
+        `Roblox OAuth ${newStatus ? 'Enabled' : 'Disabled'}`,
+        `Admin ${auth.currentUser?.email || 'Staff'} ${newStatus ? 'enabled' : 'disabled'} the Roblox OAuth 2.0 login option.`
+      );
+
+      toast(`Roblox OAuth 2.0 login has been ${newStatus ? 'ENABLED' : 'DISABLED'} for all visitors.`, 'success');
+    } catch (err: any) {
+      console.error('Failed to update Roblox OAuth status:', err);
+      toast('Failed to update Roblox OAuth setting. Check permissions.', 'error');
+    } finally {
+      setIsTogglingRobloxOAuth(false);
+    }
+  };
+
+  // Feedback Action Handlers
+  const handleUpdateFeedbackStatus = async (feedbackId: string, newStatus: FeedbackStatus) => {
+    try {
+      await updateDoc(doc(db, 'userFeedback', feedbackId), {
+        status: newStatus,
+        updatedAt: serverTimestamp(),
+        updatedBy: currentUser?.email || 'Admin'
+      });
+      toast(`Feedback marked as ${newStatus.toUpperCase()}!`, 'success');
+    } catch (err: any) {
+      console.error('Failed to update feedback status:', err);
+      toast('Failed to update feedback status.', 'error');
+    }
+  };
+
+  const handleSendFeedbackReply = async () => {
+    if (!replyingFeedback) return;
+    const msg = replyMessageInput.trim();
+    if (!msg) {
+      toast('Please write a reply message for the user.', 'error');
+      return;
+    }
+
+    setIsSendingReply(true);
+    try {
+      // 1. Update feedback doc with admin response
+      await updateDoc(doc(db, 'userFeedback', replyingFeedback.id), {
+        adminResponse: msg,
+        status: 'reviewed',
+        respondedAt: serverTimestamp(),
+        respondedBy: currentUser?.displayName || currentUser?.email || 'Staff Admin'
+      });
+
+      // 2. If user has a real userId, write to their notifications collection
+      if (replyingFeedback.userId && !replyingFeedback.userId.startsWith('guest_')) {
+        await addDoc(collection(db, 'users', replyingFeedback.userId, 'notifications'), {
+          title: `Staff Response on: "${replyingFeedback.subject}" 📬`,
+          message: msg,
+          type: 'system',
+          isRead: false,
+          timestamp: serverTimestamp()
+        });
+      }
+
+      await logActivity(
+        'admin_action',
+        'Responded to Feedback',
+        `Staff responded to feedback from ${replyingFeedback.userDisplayName}: "${replyingFeedback.subject}"`
+      );
+
+      toast(`Reply sent to ${replyingFeedback.userDisplayName}!`, 'success');
+      setReplyingFeedback(null);
+      setReplyMessageInput('');
+    } catch (err: any) {
+      console.error('Failed to send feedback reply:', err);
+      toast('Failed to send reply to user.', 'error');
+    } finally {
+      setIsSendingReply(false);
+    }
+  };
+
+  const handleGrantFeedbackBounty = async () => {
+    if (!bountyFeedback) return;
+    if (!bountyFeedback.userId || bountyFeedback.userId.startsWith('guest_')) {
+      toast('Cannot grant coins to a guest user without an account.', 'error');
+      return;
+    }
+
+    setIsGrantingBounty(true);
+    try {
+      const userRef = doc(db, 'users', bountyFeedback.userId);
+      await updateDoc(userRef, {
+        coins: increment(bountyAmount)
+      });
+
+      await addDoc(collection(db, 'users', bountyFeedback.userId, 'notifications'), {
+        title: `Bug Bounty / Feedback Reward! 🪙 (+${bountyAmount.toLocaleString()} Coins)`,
+        message: `Admin staff rewarded you ${bountyAmount.toLocaleString()} BloxCoins for your helpful submission: "${bountyFeedback.subject}". Reason: ${bountyReason}`,
+        type: 'reward',
+        isRead: false,
+        timestamp: serverTimestamp()
+      });
+
+      await logActivity(
+        'admin_grant_coins',
+        `Granted ${bountyAmount} Coin Bounty`,
+        `Staff rewarded ${bountyFeedback.userDisplayName} with ${bountyAmount} coins for feedback: "${bountyFeedback.subject}"`
+      );
+
+      toast(`Granted ${bountyAmount.toLocaleString()} BloxCoins to ${bountyFeedback.userDisplayName}! 🪙`, 'success');
+      setBountyFeedback(null);
+    } catch (err: any) {
+      console.error('Failed to grant feedback bounty:', err);
+      toast('Failed to grant bonus coins.', 'error');
+    } finally {
+      setIsGrantingBounty(false);
+    }
+  };
+
+  const handleDeleteFeedback = async () => {
+    if (!deletingFeedback) return;
+    setIsDeletingFeedback(true);
+    try {
+      await deleteDoc(doc(db, 'userFeedback', deletingFeedback.id));
+      toast('Feedback removed successfully.', 'success');
+      setDeletingFeedback(null);
+    } catch (err: any) {
+      console.error('Failed to delete feedback:', err);
+      toast('Failed to delete feedback.', 'error');
+    } finally {
+      setIsDeletingFeedback(false);
+    }
+  };
+
+  const toggleProfanityReveal = (id: string) => {
+    setRevealedProfanityMap(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
+  // Feedback Computed Lists
+  const filteredFeedbacks = useMemo(() => {
+    return feedbacks.filter(item => {
+      // Category filter
+      if (feedbackCategoryFilter !== 'all' && item.category !== feedbackCategoryFilter) {
+        return false;
+      }
+      // Status filter
+      if (feedbackStatusFilter !== 'all' && item.status !== feedbackStatusFilter) {
+        return false;
+      }
+      // Only flagged profanity filter
+      if (feedbackOnlyFlagged && !item.hasProfanity) {
+        return false;
+      }
+      // Search query
+      if (feedbackSearch.trim()) {
+        const q = feedbackSearch.toLowerCase();
+        const matchesName = (item.userDisplayName || '').toLowerCase().includes(q);
+        const matchesEmail = (item.userEmail || '').toLowerCase().includes(q);
+        const matchesRoblox = (item.robloxUsername || '').toLowerCase().includes(q);
+        const matchesSubject = (item.subject || '').toLowerCase().includes(q);
+        const matchesFilteredMsg = (item.filteredMessage || '').toLowerCase().includes(q);
+        const matchesOriginalMsg = (item.originalMessage || '').toLowerCase().includes(q);
+        if (!matchesName && !matchesEmail && !matchesRoblox && !matchesSubject && !matchesFilteredMsg && !matchesOriginalMsg) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [feedbacks, feedbackCategoryFilter, feedbackStatusFilter, feedbackOnlyFlagged, feedbackSearch]);
+
+  const pendingFeedbacksCount = useMemo(() => feedbacks.filter(f => f.status === 'pending').length, [feedbacks]);
+  const averageFeedbackRating = useMemo(() => {
+    if (feedbacks.length === 0) return 5;
+    const sum = feedbacks.reduce((acc, f) => acc + (f.rating || 5), 0);
+    return (sum / feedbacks.length).toFixed(1);
+  }, [feedbacks]);
 
   // Live Stats calculations
   const totalVotes = useMemo(() => games.reduce((sum, g) => sum + g.votes, 0), [games]);
@@ -1216,6 +1472,28 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
               </button>
 
               <button
+                onClick={() => setActiveTab('feedback')}
+                className={cn(
+                  'flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold transition-all relative shrink-0 whitespace-nowrap',
+                  activeTab === 'feedback'
+                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-850'
+                )}
+              >
+                <MessageSquarePlus size={14} />
+                User Feedback
+                {pendingFeedbacksCount > 0 ? (
+                  <span className="flex h-4.5 min-w-[18px] items-center justify-center rounded-full bg-amber-500 text-[10px] text-black px-1 font-black animate-pulse shadow-sm">
+                    {pendingFeedbacksCount}
+                  </span>
+                ) : feedbacks.length > 0 ? (
+                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-zinc-800 text-[10px] text-zinc-300 px-1 font-mono">
+                    {feedbacks.length}
+                  </span>
+                ) : null}
+              </button>
+
+              <button
                 onClick={() => setActiveTab('activity')}
                 className={cn(
                   'flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold transition-all relative shrink-0 whitespace-nowrap',
@@ -1430,6 +1708,59 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
                         </div>
                       ))}
                     </div>
+                  </div>
+                </div>
+
+                {/* 🔒 Global Roblox OAuth 2.0 Control Card */}
+                <div className="rounded-3xl border border-zinc-800 bg-zinc-900/40 p-6 backdrop-blur-md">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-600/20 border border-red-500/30 text-red-400">
+                          <Shield size={18} />
+                        </div>
+                        <div>
+                          <h4 className="text-base font-black text-white flex items-center gap-2">
+                            Roblox OAuth 2.0 Public Login
+                            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                              robloxOAuthEnabled 
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                                : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                            }`}>
+                              {robloxOAuthEnabled ? 'Enabled' : 'Disabled'}
+                            </span>
+                          </h4>
+                          <p className="text-xs text-zinc-400">
+                            Control whether the official Roblox OAuth popup login option is visible to all regular site visitors.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={isTogglingRobloxOAuth}
+                      onClick={handleToggleRobloxOAuth}
+                      className={`px-5 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 shadow-lg cursor-pointer disabled:opacity-50 shrink-0 ${
+                        robloxOAuthEnabled
+                          ? 'bg-red-600/20 hover:bg-red-600/40 text-red-300 border border-red-500/40'
+                          : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/50'
+                      }`}
+                    >
+                      {isTogglingRobloxOAuth ? (
+                        <span>Updating...</span>
+                      ) : robloxOAuthEnabled ? (
+                        <>
+                          <Ban size={14} />
+                          <span>Disable Roblox OAuth</span>
+                        </>
+                      ) : (
+                        <>
+                          <Zap size={14} />
+                          <span>Enable Roblox OAuth</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
 
@@ -3196,6 +3527,428 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
                 </div>
               </motion.div>
             )}
+
+            {/* 5. USER FEEDBACK TAB */}
+            {activeTab === 'feedback' && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-6"
+              >
+                {/* Header and Stats */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-850 pb-4">
+                  <div>
+                    <h3 className="text-lg font-black text-white flex items-center gap-2">
+                      <MessageSquarePlus className="text-blue-500" size={20} />
+                      Community Feedback &amp; Bug Suite
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                        {filteredFeedbacks.length} Submissions
+                      </span>
+                    </h3>
+                    <p className="text-xs text-zinc-400">
+                      Filtered bug reports, suggestions, and feature requests directly from players.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setFeedbackOnlyFlagged(!feedbackOnlyFlagged)}
+                      className={cn(
+                        'flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-all border',
+                        feedbackOnlyFlagged
+                          ? 'bg-amber-500/20 border-amber-500 text-amber-300'
+                          : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white'
+                      )}
+                    >
+                      <ShieldAlert size={14} className={feedbackOnlyFlagged ? 'text-amber-400' : ''} />
+                      <span>{feedbackOnlyFlagged ? 'Showing Filtered Flags' : 'Filter Flags Only'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Metric Summary Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-3.5 space-y-1">
+                    <p className="text-[10px] font-black uppercase text-zinc-500">Total Feedback</p>
+                    <p className="text-2xl font-black text-white font-mono">{feedbacks.length}</p>
+                    <p className="text-[10px] text-zinc-400">All-time received</p>
+                  </div>
+
+                  <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3.5 space-y-1">
+                    <p className="text-[10px] font-black uppercase text-amber-400 flex items-center justify-between">
+                      <span>Pending Review</span>
+                      {pendingFeedbacksCount > 0 && <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />}
+                    </p>
+                    <p className="text-2xl font-black text-amber-300 font-mono">{pendingFeedbacksCount}</p>
+                    <p className="text-[10px] text-amber-400/80">Requires staff attention</p>
+                  </div>
+
+                  <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-3.5 space-y-1">
+                    <p className="text-[10px] font-black uppercase text-emerald-400">Resolved</p>
+                    <p className="text-2xl font-black text-emerald-300 font-mono">
+                      {feedbacks.filter(f => f.status === 'resolved').length}
+                    </p>
+                    <p className="text-[10px] text-emerald-400/80">Addressed issues</p>
+                  </div>
+
+                  <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-3.5 space-y-1">
+                    <p className="text-[10px] font-black uppercase text-blue-400">Avg Satisfaction</p>
+                    <p className="text-2xl font-black text-blue-300 font-mono flex items-center gap-1">
+                      {averageFeedbackRating}
+                      <Star size={16} className="fill-amber-400 text-amber-400 inline" />
+                    </p>
+                    <p className="text-[10px] text-blue-400/80">From 1-5 star ratings</p>
+                  </div>
+                </div>
+
+                {/* Filter and Search Bar */}
+                <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-zinc-900/50 p-3 rounded-2xl border border-zinc-800">
+                  {/* Search Input */}
+                  <div className="relative flex-1 min-w-[200px]">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" size={15} />
+                    <input
+                      type="text"
+                      value={feedbackSearch}
+                      onChange={(e) => setFeedbackSearch(e.target.value)}
+                      placeholder="Search feedback by username, subject, or message..."
+                      className="w-full rounded-xl border border-zinc-800 bg-zinc-900 pl-10 pr-4 py-2 text-xs text-white placeholder-zinc-500 focus:border-blue-500 focus:outline-none"
+                    />
+                    {feedbackSearch && (
+                      <button
+                        onClick={() => setFeedbackSearch('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Category Filter Pills */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
+                    {(['all', 'bug', 'feature', 'game_suggestion', 'ui_improvement', 'general'] as const).map((cat) => {
+                      const labels: Record<string, string> = {
+                        all: 'All Topics',
+                        bug: '🐞 Bugs',
+                        feature: '💡 Features',
+                        game_suggestion: '🎮 Games',
+                        ui_improvement: '🎨 Design',
+                        general: '💬 General'
+                      };
+                      const isSelected = feedbackCategoryFilter === cat;
+                      return (
+                        <button
+                          key={cat}
+                          onClick={() => setFeedbackCategoryFilter(cat)}
+                          className={cn(
+                            'px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap',
+                            isSelected
+                              ? 'bg-blue-600 text-white shadow-md'
+                              : 'bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800'
+                          )}
+                        >
+                          {labels[cat]}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Status Filter */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
+                    {(['all', 'pending', 'reviewed', 'resolved', 'archived'] as const).map((st) => {
+                      const isSelected = feedbackStatusFilter === st;
+                      return (
+                        <button
+                          key={st}
+                          onClick={() => setFeedbackStatusFilter(st)}
+                          className={cn(
+                            'px-2.5 py-1.5 rounded-xl text-[11px] font-bold uppercase transition-all whitespace-nowrap',
+                            isSelected
+                              ? 'bg-zinc-200 text-black shadow-md'
+                              : 'bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800'
+                          )}
+                        >
+                          {st}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Feedback Cards List */}
+                <div className="space-y-3.5">
+                  {filteredFeedbacks.map((item) => {
+                    const isProfanityRevealed = revealedProfanityMap[item.id];
+                    const isPending = item.status === 'pending';
+                    const isResolved = item.status === 'resolved';
+
+                    const categoryBadgeMap: Record<string, { label: string; color: string; icon: React.ElementType }> = {
+                      bug: { label: 'Bug Report', color: 'text-rose-400 bg-rose-500/10 border-rose-500/30', icon: Bug },
+                      feature: { label: 'Feature Request', color: 'text-amber-400 bg-amber-500/10 border-amber-500/30', icon: Lightbulb },
+                      game_suggestion: { label: 'Game Suggestion', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30', icon: Gamepad2 },
+                      ui_improvement: { label: 'UI & Design', color: 'text-purple-400 bg-purple-500/10 border-purple-500/30', icon: Palette },
+                      general: { label: 'General Feedback', color: 'text-blue-400 bg-blue-500/10 border-blue-500/30', icon: MessageCircle },
+                    };
+
+                    const catInfo = categoryBadgeMap[item.category] || categoryBadgeMap.general;
+                    const CatIcon = catInfo.icon;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={cn(
+                          'rounded-2xl border p-4 sm:p-5 transition-all space-y-4 relative',
+                          isPending
+                            ? 'bg-zinc-900/60 border-amber-500/30 shadow-lg shadow-amber-950/10'
+                            : isResolved
+                            ? 'bg-zinc-900/30 border-emerald-500/20'
+                            : 'bg-zinc-900/30 border-zinc-800'
+                        )}
+                      >
+                        {/* Top Row: User & Category & Rating */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800/60 pb-3.5">
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={item.userPhotoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${item.userId || 'guest'}`}
+                              alt=""
+                              className="h-10 w-10 rounded-2xl border border-zinc-800 bg-zinc-950 object-cover shrink-0"
+                            />
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-extrabold text-white text-sm">
+                                  {item.userDisplayName}
+                                </span>
+                                {item.robloxUsername && (
+                                  <span className="text-[11px] font-mono text-zinc-400 bg-zinc-800/80 px-2 py-0.5 rounded-lg border border-zinc-700/50">
+                                    @{item.robloxUsername}
+                                  </span>
+                                )}
+                                {item.userEmail && (
+                                  <span className="text-[10px] text-zinc-500 hidden md:inline">
+                                    ({item.userEmail})
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-zinc-500 flex items-center gap-1.5 mt-0.5">
+                                <Clock size={11} />
+                                {formatTimeAgo(item.createdAt)}
+                                {item.appVersion && <span>• {item.appVersion}</span>}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+                            {/* Category Badge */}
+                            <span className={cn('flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-xl border', catInfo.color)}>
+                              <CatIcon size={13} />
+                              {catInfo.label}
+                            </span>
+
+                            {/* Rating Stars */}
+                            <div className="flex items-center gap-0.5 bg-zinc-950 px-2 py-1 rounded-xl border border-zinc-800">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <Star
+                                  key={star}
+                                  size={12}
+                                  className={star <= (item.rating || 5) ? 'fill-amber-400 text-amber-400' : 'text-zinc-700'}
+                                />
+                              ))}
+                              <span className="text-[10px] font-mono font-bold text-zinc-300 ml-1">
+                                {item.rating || 5}/5
+                              </span>
+                            </div>
+
+                            {/* Status Pill */}
+                            <span
+                              className={cn(
+                                'text-[10px] font-black uppercase px-2.5 py-1 rounded-xl border',
+                                item.status === 'pending'
+                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
+                                  : item.status === 'reviewed'
+                                  ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                                  : item.status === 'resolved'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                  : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                              )}
+                            >
+                              {item.status}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Middle: Subject & Message Body */}
+                        <div className="space-y-2">
+                          <h4 className="text-sm font-black text-white tracking-wide">
+                            {item.subject}
+                          </h4>
+
+                          <div className="p-3.5 rounded-xl bg-zinc-950/80 border border-zinc-850/80 text-xs text-zinc-200 leading-relaxed font-normal whitespace-pre-wrap">
+                            {isProfanityRevealed ? (
+                              <div>
+                                <p className="text-rose-300 font-mono text-[11px] mb-1.5 flex items-center gap-1 font-bold">
+                                  <AlertTriangle size={12} />
+                                  [Admin View] Uncensored Original Text:
+                                </p>
+                                {item.originalMessage || item.filteredMessage}
+                              </div>
+                            ) : (
+                              item.filteredMessage || item.originalMessage
+                            )}
+                          </div>
+
+                          {/* Filtered Profanity / Safety Notice */}
+                          {item.hasProfanity && (
+                            <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300">
+                              <div className="flex items-center gap-1.5">
+                                <ShieldAlert size={14} className="text-amber-400 shrink-0" />
+                                <span>
+                                  Safety Filter Triggered: Harmful words masked in user view.
+                                  {item.flaggedWords && item.flaggedWords.length > 0 && (
+                                    <span className="font-mono text-amber-200 ml-1">
+                                      ({item.flaggedWords.join(', ')})
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                              <button
+                                onClick={() => toggleProfanityReveal(item.id)}
+                                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-amber-300 font-bold text-[10px] border border-amber-500/30 transition-colors shrink-0"
+                              >
+                                {isProfanityRevealed ? (
+                                  <>
+                                    <EyeOff size={12} />
+                                    <span>Hide Uncensored</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Eye size={12} />
+                                    <span>View Uncensored</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Admin Staff Response display if already replied */}
+                          {item.adminResponse && (
+                            <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs space-y-1">
+                              <div className="flex items-center justify-between text-[11px] font-bold text-blue-300">
+                                <span className="flex items-center gap-1.5">
+                                  <MessageSquare size={13} className="text-blue-400" />
+                                  Staff Reply by {item.respondedBy || 'Admin'}:
+                                </span>
+                                {item.respondedAt && (
+                                  <span className="text-[10px] text-blue-400/80 font-mono">
+                                    {formatTimeAgo(item.respondedAt)}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-zinc-200 pl-4 border-l-2 border-blue-500/40">
+                                {item.adminResponse}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Bottom Action Footer */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-800/40">
+                          {/* Quick Status Controls */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] font-bold text-zinc-500 uppercase mr-1">Status:</span>
+
+                            {item.status !== 'reviewed' && (
+                              <button
+                                onClick={() => handleUpdateFeedbackStatus(item.id, 'reviewed')}
+                                className="px-2.5 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 hover:text-blue-300 text-[11px] font-bold border border-blue-500/20 transition-colors"
+                              >
+                                Mark Reviewed
+                              </button>
+                            )}
+
+                            {item.status !== 'resolved' && (
+                              <button
+                                onClick={() => handleUpdateFeedbackStatus(item.id, 'resolved')}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 text-[11px] font-bold border border-emerald-500/20 transition-colors flex items-center gap-1"
+                              >
+                                <CheckCircle size={12} />
+                                Mark Resolved
+                              </button>
+                            )}
+
+                            {item.status !== 'archived' && (
+                              <button
+                                onClick={() => handleUpdateFeedbackStatus(item.id, 'archived')}
+                                className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 text-[11px] font-bold border border-zinc-700 transition-colors flex items-center gap-1"
+                              >
+                                <Archive size={12} />
+                                Archive
+                              </button>
+                            )}
+
+                            {item.status !== 'pending' && (
+                              <button
+                                onClick={() => handleUpdateFeedbackStatus(item.id, 'pending')}
+                                className="px-2.5 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-amber-400 text-[11px] font-bold border border-zinc-800 transition-colors"
+                              >
+                                Reopen
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Interactive Staff Actions: Reply, Reward Bounty, Delete */}
+                          <div className="flex items-center gap-2">
+                            {item.userId && !item.userId.startsWith('guest_') && (
+                              <button
+                                onClick={() => {
+                                  setBountyFeedback(item);
+                                  setBountyAmount(100);
+                                  setBountyReason('Helpful feedback / Bug report contribution');
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 font-bold text-xs border border-amber-500/30 transition-colors"
+                                title="Reward user with BloxCoins"
+                              >
+                                <Coins size={14} className="text-amber-400" />
+                                <span>Grant Bounty</span>
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => {
+                                setReplyingFeedback(item);
+                                setReplyMessageInput(item.adminResponse || '');
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md transition-all active:scale-95"
+                            >
+                              <MessageSquare size={13} />
+                              <span>{item.adminResponse ? 'Edit Reply' : 'Reply & Notify'}</span>
+                            </button>
+
+                            <button
+                              onClick={() => setDeletingFeedback(item)}
+                              className="p-1.5 rounded-xl text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                              title="Delete Feedback"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {filteredFeedbacks.length === 0 && (
+                    <div className="text-center py-16 rounded-2xl border border-dashed border-zinc-800">
+                      <MessageSquarePlus size={36} className="text-zinc-600 mx-auto mb-2" />
+                      <p className="text-sm font-semibold text-zinc-400">No feedback submissions found</p>
+                      <p className="text-xs text-zinc-600 mt-1">
+                        {feedbacks.length === 0
+                          ? 'Player feedback submitted via the Feedback modal will appear here in real-time.'
+                          : 'Try changing your category or status filters to see submissions.'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
           </div>
         </motion.div>
 
@@ -3747,6 +4500,242 @@ export default function AdminDashboard({ isOpen, onClose, games, onVote, customA
                       Confirm Decline
                     </button>
                   </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Modal: Reply to User Feedback */}
+        <AnimatePresence>
+          {replyingFeedback && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setReplyingFeedback(null)}
+                className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+              />
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 15 }}
+                className="relative z-10 w-full max-w-lg rounded-3xl border border-blue-500/30 bg-zinc-950 p-6 shadow-2xl space-y-4"
+              >
+                <div className="flex items-center justify-between border-b border-zinc-800 pb-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                      <MessageSquare size={18} />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-white">Reply &amp; Notify Player</h3>
+                      <p className="text-xs text-zinc-400">
+                        To: <span className="text-blue-300 font-bold">{replyingFeedback.userDisplayName}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setReplyingFeedback(null)}
+                    className="p-1 rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-900"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* Feedback Reference */}
+                <div className="p-3 rounded-2xl bg-zinc-900/70 border border-zinc-800 space-y-1 text-xs">
+                  <p className="font-bold text-white flex items-center gap-2">
+                    <span className="text-zinc-400 font-normal">Topic:</span>
+                    {replyingFeedback.subject}
+                  </p>
+                  <p className="text-zinc-400 line-clamp-2 italic">
+                    "{replyingFeedback.filteredMessage || replyingFeedback.originalMessage}"
+                  </p>
+                </div>
+
+                {/* Staff Reply Textarea */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-zinc-300 flex items-center justify-between">
+                    <span>Staff Response Message (Sent directly to in-app notifications)</span>
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={replyMessageInput}
+                    onChange={(e) => setReplyMessageInput(e.target.value)}
+                    placeholder="e.g., Thank you for reporting this issue! We have deployed a patch fixing the mobile vote delay..."
+                    className="w-full rounded-2xl bg-zinc-900 border border-zinc-800 p-3.5 text-xs text-white placeholder-zinc-500 focus:border-blue-500 focus:outline-none transition-all resize-none leading-relaxed"
+                  />
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setReplyingFeedback(null)}
+                    className="flex-1 rounded-2xl border border-zinc-800 bg-zinc-900 py-3 text-xs font-bold text-zinc-300 hover:bg-zinc-850 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSendingReply || !replyMessageInput.trim()}
+                    onClick={handleSendFeedbackReply}
+                    className="flex-1 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white py-3 text-xs font-black shadow-lg shadow-blue-900/50 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  >
+                    {isSendingReply ? 'Sending...' : 'Send Staff Response 📬'}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Modal: Grant Feedback Bug Bounty */}
+        <AnimatePresence>
+          {bountyFeedback && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setBountyFeedback(null)}
+                className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+              />
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 15 }}
+                className="relative z-10 w-full max-w-md rounded-3xl border border-amber-500/30 bg-zinc-950 p-6 shadow-2xl space-y-4"
+              >
+                <div className="flex items-center justify-between border-b border-zinc-800 pb-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                      <Coins size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-white">Reward Bug Bounty</h3>
+                      <p className="text-xs text-zinc-400">
+                        Player: <span className="text-amber-300 font-bold">{bountyFeedback.userDisplayName}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setBountyFeedback(null)}
+                    className="p-1 rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-900"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-zinc-300">Select Bounty Reward Amount</label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[50, 100, 250, 500].map((amt) => (
+                        <button
+                          key={amt}
+                          type="button"
+                          onClick={() => setBountyAmount(amt)}
+                          className={cn(
+                            'py-2.5 rounded-xl font-black text-xs border transition-all',
+                            bountyAmount === amt
+                              ? 'bg-amber-500 text-black border-amber-400 shadow-md shadow-amber-950/40 scale-102'
+                              : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'
+                          )}
+                        >
+                          +{amt} 🪙
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-zinc-300">Reward Note / Reason</label>
+                    <input
+                      type="text"
+                      value={bountyReason}
+                      onChange={(e) => setBountyReason(e.target.value)}
+                      placeholder="e.g. Critical voting bug report"
+                      className="w-full rounded-xl bg-zinc-900 border border-zinc-800 px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:border-amber-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setBountyFeedback(null)}
+                    className="flex-1 rounded-2xl border border-zinc-800 bg-zinc-900 py-3 text-xs font-bold text-zinc-300 hover:bg-zinc-850 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isGrantingBounty}
+                    onClick={handleGrantFeedbackBounty}
+                    className="flex-1 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black py-3 text-xs font-black shadow-lg shadow-amber-900/50 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  >
+                    <Coins size={14} />
+                    {isGrantingBounty ? 'Rewarding...' : `Grant ${bountyAmount} Coins`}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Modal: Delete Feedback Confirmation */}
+        <AnimatePresence>
+          {deletingFeedback && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setDeletingFeedback(null)}
+                className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+              />
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 15 }}
+                className="relative z-10 w-full max-w-md rounded-3xl border border-rose-500/30 bg-zinc-950 p-6 shadow-2xl space-y-4"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                    <Trash2 size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-white">Delete Feedback Record</h3>
+                    <p className="text-xs text-zinc-400">
+                      Permanently remove this submission from the database.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs text-zinc-300">
+                  <span className="font-bold text-white">"{deletingFeedback.subject}"</span> by {deletingFeedback.userDisplayName}
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setDeletingFeedback(null)}
+                    className="flex-1 rounded-2xl border border-zinc-800 bg-zinc-900 py-3 text-xs font-bold text-zinc-300 hover:bg-zinc-850 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isDeletingFeedback}
+                    onClick={handleDeleteFeedback}
+                    className="flex-1 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white py-3 text-xs font-black shadow-lg shadow-rose-950/50 transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {isDeletingFeedback ? 'Deleting...' : 'Confirm Delete 🗑️'}
+                  </button>
                 </div>
               </motion.div>
             </div>

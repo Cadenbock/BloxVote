@@ -19,7 +19,6 @@ import { getNameColorStyle, getTitleItemStyle } from '../lib/shopData';
 import { filterChatMessage, setCustomBannedWords } from '../lib/chatFilter';
 import { useToast } from './Toast';
 import { playSound } from '../lib/sounds';
-import CoolMerchButton from './CoolMerchButton';
 
 interface PublicChatProps {
   user: User | null;
@@ -41,8 +40,18 @@ export default function PublicChat({ user, profileData, isAdmin }: PublicChatPro
   const [isSending, setIsSending] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [banInfo, setBanInfo] = useState<BanInfo>({ isBanned: false, bannedUntil: null });
+  const [chatCooldownRemaining, setChatCooldownRemaining] = useState<number>(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+
+  // Tick down chat cooldown
+  useEffect(() => {
+    if (chatCooldownRemaining <= 0) return;
+    const interval = setInterval(() => {
+      setChatCooldownRemaining((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [chatCooldownRemaining]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -139,6 +148,11 @@ export default function PublicChat({ user, profileData, isAdmin }: PublicChatPro
       return;
     }
 
+    if (chatCooldownRemaining > 0 && !isAdmin) {
+      toast(`Chat slowmode active! Please wait ${chatCooldownRemaining}s ⏳`, 'error');
+      return;
+    }
+
     const trimmed = inputText.trim();
     if (!trimmed) return;
     if (trimmed.length > 500) {
@@ -203,6 +217,9 @@ export default function PublicChat({ user, profileData, isAdmin }: PublicChatPro
       });
       playSound('click');
       setInputText('');
+      if (!isAdmin) {
+        setChatCooldownRemaining(3);
+      }
       setTimeout(scrollToBottom, 100);
     } catch (error) {
       console.error('Error sending message:', error);
@@ -249,8 +266,6 @@ export default function PublicChat({ user, profileData, isAdmin }: PublicChatPro
             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
             <span>Live Room ({messages.length} msgs)</span>
           </div>
-
-          <CoolMerchButton variant="header" label="Merch Drop" />
         </div>
       </div>
 
@@ -405,11 +420,13 @@ export default function PublicChat({ user, profileData, isAdmin }: PublicChatPro
               />
               <button
                 type="submit"
-                disabled={isSending || !inputText.trim()}
+                disabled={isSending || chatCooldownRemaining > 0 || !inputText.trim()}
                 className="flex items-center justify-center h-11 px-5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm transition-all shadow-md active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
               >
                 {isSending ? (
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                ) : chatCooldownRemaining > 0 ? (
+                  <span className="font-mono text-xs text-blue-200">⏳ {chatCooldownRemaining}s</span>
                 ) : (
                   <>
                     <Send size={16} className="mr-1.5" />

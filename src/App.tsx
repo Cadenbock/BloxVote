@@ -22,7 +22,7 @@ import {
 } from "firebase/firestore";
 import { containsProfanityOrCensoredWords, setCustomBannedWords } from './lib/chatFilter';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { Trophy, Plus, LogIn, LogOut, Gamepad2, Search, TrendingUp, AlertTriangle, BarChart3, CircleUser, Download, Shield, Star, Flame, Sparkles, FileText, Coins, ShoppingBag, MessageSquare, Bell, Settings as SettingsIcon } from 'lucide-react';
+import { Trophy, Plus, LogIn, LogOut, Gamepad2, Search, TrendingUp, AlertTriangle, BarChart3, CircleUser, Download, Shield, Star, Flame, Sparkles, FileText, Coins, ShoppingBag, MessageSquare, MessageSquarePlus, Bell, Settings as SettingsIcon } from 'lucide-react';
 import { updateProfile } from 'firebase/auth';
 import { db, auth, signIn, logout, unlinkRobloxAccount, getStoredRobloxUser } from './firebase';
 import { Game, UserStreakData, GlobalAnnouncement, UserProfileData, AppNotification, CustomTitleRequest, AdminCustomTitle, AdminCustomFont, CustomThemeConfig, CustomColorConfig, CustomFontConfig } from './types';
@@ -37,9 +37,8 @@ import UpdateLogsModal from './components/UpdateLogsModal';
 import ShopModal from './components/ShopModal';
 import PublicChat from './components/PublicChat';
 import NotificationsModal from './components/NotificationsModal';
-import MerchPopup from './components/MerchPopup';
-import MerchCouponModal from './components/MerchCouponModal';
 import SignInModal from './components/SignInModal';
+import FeedbackModal from './components/FeedbackModal';
 
 function formatCompactCoins(num: number): string {
   if (num === undefined || num === null || isNaN(num)) return '0';
@@ -51,7 +50,6 @@ function formatCompactCoins(num: number): string {
   if (num >= 1e6) return (num / 1e6).toFixed(1) + ' M';
   return num.toLocaleString();
 }
-import CoolMerchButton from './components/CoolMerchButton';
 import { SettingsModal } from './components/SettingsModal';
 import { BloxVoteLoadingScreen } from './components/BloxVoteLoadingScreen';
 import { getNameColorStyle, getBackgroundThemeStyle, getFontItemStyle, getTitleItemStyle, NameColorItem, BackgroundThemeItem, FontItem, TitleItem } from './lib/shopData';
@@ -188,6 +186,7 @@ function App() {
   const [isSignInModalOpen, setIsSignInModalOpen] = useState(false);
   const [signInInitialTab, setSignInInitialTab] = useState<'roblox_fast' | 'roblox_oauth' | 'google'>('roblox_fast');
   const [isLinkRobloxModalOpen, setIsLinkRobloxModalOpen] = useState(false);
+  const [isRobloxOAuthEnabled, setIsRobloxOAuthEnabled] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
 
   useEffect(() => {
@@ -198,6 +197,8 @@ function App() {
   const [userStreak, setUserStreak] = useState<UserStreakData | null>(null);
   const [announcement, setAnnouncement] = useState<GlobalAnnouncement | null>(null);
   const [isUpdateLogsOpen, setIsUpdateLogsOpen] = useState(false);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+  const [votingCooldownGameIds, setVotingCooldownGameIds] = useState<Record<string, boolean>>({});
   const [previewThemeId, setPreviewThemeId] = useState<string | null>(null);
   const [previewFontId, setPreviewFontId] = useState<string | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -523,6 +524,37 @@ function App() {
 
     return () => unsubscribe();
   }, []);
+
+  // Realtime listener for Roblox OAuth 2.0 global setting
+  useEffect(() => {
+    const oauthRef = doc(db, 'settings', 'robloxOAuth');
+    const unsubscribe = onSnapshot(oauthRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setIsRobloxOAuthEnabled(Boolean(snapshot.data()?.enabled));
+      } else {
+        setIsRobloxOAuthEnabled(false);
+      }
+    }, (err) => {
+      console.warn("Roblox OAuth settings listener warning:", err);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleToggleRobloxOAuth = async (enabled: boolean) => {
+    try {
+      const oauthRef = doc(db, 'settings', 'robloxOAuth');
+      await setDoc(oauthRef, {
+        enabled,
+        updatedAt: serverTimestamp(),
+        updatedBy: user?.email || user?.uid || 'admin'
+      }, { merge: true });
+      toast(`Roblox OAuth 2.0 has been ${enabled ? 'ENABLED' : 'DISABLED'} for all visitors!`, 'success');
+    } catch (err: any) {
+      console.error('Failed to toggle Roblox OAuth:', err);
+      toast('Failed to update Roblox OAuth setting. Check permissions.', 'error');
+    }
+  };
 
   // Realtime listener for user profile streak data
   useEffect(() => {
@@ -1033,6 +1065,20 @@ function App() {
       setIsSignInModalOpen(true);
       return;
     }
+
+    if (votingCooldownGameIds[gameId]) {
+      return;
+    }
+
+    // Set 1-second vote debounce cooldown
+    setVotingCooldownGameIds(prev => ({ ...prev, [gameId]: true }));
+    setTimeout(() => {
+      setVotingCooldownGameIds(prev => {
+        const next = { ...prev };
+        delete next[gameId];
+        return next;
+      });
+    }, 1000);
 
     playSound('vote');
 
@@ -1780,6 +1826,14 @@ function App() {
                 <Sparkles size={15} className="text-blue-400" />
                 Update Logs
               </button>
+              <button
+                onClick={() => setIsFeedbackOpen(true)}
+                className="flex items-center gap-2 rounded-full px-4 py-2 text-xs sm:text-sm font-bold text-zinc-400 hover:text-white transition-all hover:bg-zinc-800/60"
+                title="Report Bugs, Share Suggestions & Feedback"
+              >
+                <MessageSquarePlus size={15} className="text-amber-400" />
+                <span>Feedback</span>
+              </button>
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
@@ -1797,12 +1851,6 @@ function App() {
                   </span>
                 )}
               </button>
-
-              {/* Official Merch Store Header Button */}
-              <CoolMerchButton
-                variant="header"
-                label="Merch Store"
-              />
 
               {/* Coins & Shop Pill */}
               <button
@@ -1957,11 +2005,6 @@ function App() {
                   <ShoppingBag size={20} />
                   Open Cosmetic Shop
                 </button>
-                <CoolMerchButton
-                  variant="hero"
-                  label="Merch Store"
-                  sublabel="Exclusive Apparel Drop"
-                />
               </div>
             </motion.div>
           </div>
@@ -2142,15 +2185,51 @@ function App() {
 
       <footer className="border-t border-zinc-900 bg-black/80 py-12">
         <div className="mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
-          <div className="flex items-center justify-center gap-2 opacity-50 grayscale mb-6">
+          <div className="flex items-center justify-center gap-2 opacity-50 grayscale mb-4">
             <Gamepad2 size={24} />
             <span className="text-xl font-black tracking-tighter">BLOXVOTE</span>
           </div>
-          <p className="text-sm text-zinc-650">
+          <div className="flex items-center justify-center gap-4 mb-4 text-xs font-semibold text-zinc-500">
+            <button
+              onClick={() => setIsFeedbackOpen(true)}
+              className="hover:text-blue-400 transition-colors flex items-center gap-1.5"
+            >
+              <MessageSquarePlus size={14} className="text-amber-400" />
+              <span>Submit Feedback &amp; Bug Reports</span>
+            </button>
+            <span>•</span>
+            <button
+              onClick={() => setIsUpdateLogsOpen(true)}
+              className="hover:text-blue-400 transition-colors flex items-center gap-1.5"
+            >
+              <Sparkles size={14} className="text-blue-400" />
+              <span>Update Logs</span>
+            </button>
+            {isAdmin && (
+              <>
+                <span>•</span>
+                <button
+                  onClick={() => setIsAdminDashboardOpen(true)}
+                  className="text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1.5 font-bold"
+                >
+                  <Shield size={14} />
+                  <span>Admin Suite</span>
+                </button>
+              </>
+            )}
+          </div>
+          <p className="text-xs text-zinc-600">
             BloxVote is an independent community platform. Not affiliated with Roblox Corporation.
           </p>
         </div>
       </footer>
+
+      <FeedbackModal
+        isOpen={isFeedbackOpen}
+        onClose={() => setIsFeedbackOpen(false)}
+        user={user}
+        userProfileData={userProfileData}
+      />
 
       <AddGameModal
         isOpen={isAddModalOpen}
@@ -2226,9 +2305,6 @@ function App() {
         onExecuteAction={handleExecuteNotificationAction}
       />
 
-      <MerchPopup />
-      <MerchCouponModal />
-
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
@@ -2256,6 +2332,9 @@ function App() {
         isOpen={isSignInModalOpen}
         onClose={() => setIsSignInModalOpen(false)}
         initialTab={signInInitialTab}
+        isOAuthEnabled={isRobloxOAuthEnabled}
+        isAdmin={isAdmin}
+        onToggleOAuth={handleToggleRobloxOAuth}
         onSuccess={() => {
           toast('Successfully signed in! Welcome to BloxVote. 🎮', 'success');
         }}
@@ -2266,6 +2345,9 @@ function App() {
         isOpen={isLinkRobloxModalOpen}
         onClose={() => setIsLinkRobloxModalOpen(false)}
         isLinkingOnly={true}
+        isOAuthEnabled={isRobloxOAuthEnabled}
+        isAdmin={isAdmin}
+        onToggleOAuth={handleToggleRobloxOAuth}
         onSuccess={() => {
           toast('Roblox account connected successfully! 🌟', 'success');
         }}

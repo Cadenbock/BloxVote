@@ -17,11 +17,15 @@ import {
   ArrowRight,
   Lock,
   RefreshCw,
-  Zap
+  Zap,
+  ChevronRight,
+  ArrowLeft,
+  Users,
+  Shield
 } from 'lucide-react';
 import { RobloxAccountInfo } from '../types';
 import { signInWithGoogle, signInWithRoblox, linkRobloxAccount } from '../firebase';
-import { lookupRobloxAccount, verifyRobloxBioOwnership } from '../lib/robloxClient';
+import { lookupRobloxAccount, searchRobloxUsers, verifyRobloxBioOwnership } from '../lib/robloxClient';
 import { playSound } from '../lib/sounds';
 import confetti from 'canvas-confetti';
 
@@ -31,6 +35,9 @@ interface SignInModalProps {
   initialTab?: 'roblox_fast' | 'roblox_oauth' | 'google';
   isLinkingOnly?: boolean;
   onSuccess?: () => void;
+  isOAuthEnabled?: boolean;
+  isAdmin?: boolean;
+  onToggleOAuth?: (enabled: boolean) => Promise<void>;
 }
 
 export default function SignInModal({
@@ -38,13 +45,18 @@ export default function SignInModal({
   onClose,
   initialTab = 'roblox_fast',
   isLinkingOnly = false,
-  onSuccess
+  onSuccess,
+  isOAuthEnabled = false,
+  isAdmin = false,
+  onToggleOAuth
 }: SignInModalProps) {
   const [activeTab, setActiveTab] = useState<'roblox_fast' | 'roblox_oauth' | 'google'>(initialTab);
   
   // Roblox Bio Verification state
   const [usernameInput, setUsernameInput] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [matchingPlayers, setMatchingPlayers] = useState<RobloxAccountInfo[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [foundUser, setFoundUser] = useState<RobloxAccountInfo | null>(null);
   const [verificationCode, setVerificationCode] = useState('');
@@ -57,6 +69,7 @@ export default function SignInModal({
   // Official Roblox OAuth 2.0 state
   const [isOAuthLoading, setIsOAuthLoading] = useState(false);
   const [oauthError, setOauthError] = useState<string | null>(null);
+  const [isTogglingOAuth, setIsTogglingOAuth] = useState(false);
   const [clientIdInput, setClientIdInput] = useState(() => {
     return localStorage.getItem('custom_roblox_client_id') || '';
   });
@@ -64,12 +77,16 @@ export default function SignInModal({
   const [redirectUri, setRedirectUri] = useState('');
   const [copiedRedirectUri, setCopiedRedirectUri] = useState(false);
 
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-
   // Initialize and generate fresh verification code on open
   useEffect(() => {
     if (isOpen) {
-      setActiveTab(initialTab);
+      // If requested tab is oauth but oauth is disabled and not admin, default to roblox_fast
+      if (initialTab === 'roblox_oauth' && !isOAuthEnabled && !isAdmin) {
+        setActiveTab('roblox_fast');
+      } else {
+        setActiveTab(initialTab);
+      }
+
       setOauthError(null);
       setSearchError(null);
       setVerificationSuccess(false);
@@ -92,12 +109,18 @@ export default function SignInModal({
 
       // Restore last searched username
       const savedUser = localStorage.getItem('last_roblox_username');
-      if (savedUser) {
+      if (savedUser && !usernameInput) {
         setUsernameInput(savedUser);
-        lookupRobloxUser(savedUser, false);
       }
     }
-  }, [isOpen, initialTab]);
+  }, [isOpen, initialTab, isOAuthEnabled, isAdmin]);
+
+  // Fallback tab if oauth becomes disabled
+  useEffect(() => {
+    if (activeTab === 'roblox_oauth' && !isOAuthEnabled && !isAdmin) {
+      setActiveTab('roblox_fast');
+    }
+  }, [isOAuthEnabled, isAdmin, activeTab]);
 
   // Listen for OAuth postMessage events from popup
   useEffect(() => {
@@ -138,57 +161,58 @@ export default function SignInModal({
     return () => window.removeEventListener('message', handleOAuthMessage);
   }, [isLinkingOnly, onSuccess, onClose]);
 
-  const lookupRobloxUser = async (username: string, showErrors: boolean = true) => {
-    if (!username.trim()) {
-      setFoundUser(null);
-      setSearchError(null);
-      setIsSearching(false);
+  // Search Roblox Players manually via Search Button or Enter key
+  const handleSearchPlayers = async () => {
+    const query = usernameInput.trim();
+    if (!query) {
+      setSearchError('Please enter a Roblox username or User ID to search.');
+      playSound('error');
       return;
     }
 
     setIsSearching(true);
-    if (showErrors) setSearchError(null);
+    setSearchError(null);
+    setFoundUser(null);
+    setHasSearched(true);
     setVerificationError(null);
     setVerificationSuccess(false);
+    playSound('click');
 
     try {
-      const user = await lookupRobloxAccount(username.trim());
-      setFoundUser(user);
-      setSearchError(null);
-      localStorage.setItem('last_roblox_username', user.name);
-    } catch (err: any) {
-      if (showErrors) {
-        setSearchError(err?.message || 'Roblox user not found. Please check spelling.');
+      const players = await searchRobloxUsers(query);
+      setMatchingPlayers(players);
+
+      if (players.length === 0) {
+        setSearchError(`No Roblox players found matching "${query}". Try searching a different keyword or enter your exact numeric Roblox User ID.`);
+        playSound('error');
+      } else {
+        playSound('coin');
+        // Store query in local storage
+        localStorage.setItem('last_roblox_username', query);
       }
-      setFoundUser(null);
+    } catch (err: any) {
+      setSearchError(err?.message || `Failed to search players for "${query}". Please check your internet connection and try again.`);
+      playSound('error');
     } finally {
       setIsSearching(false);
     }
   };
 
-  // Debounced auto-search
-  useEffect(() => {
-    if (activeTab === 'roblox_fast') {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
+  // Select a player from search results
+  const handleSelectPlayer = (player: RobloxAccountInfo) => {
+    setFoundUser(player);
+    setVerificationError(null);
+    setVerificationSuccess(false);
+    playSound('click');
+  };
 
-      if (!usernameInput.trim()) {
-        setFoundUser(null);
-        setSearchError(null);
-        setIsSearching(false);
-        return;
-      }
-
-      debounceTimerRef.current = setTimeout(() => {
-        lookupRobloxUser(usernameInput, true);
-      }, 550);
-
-      return () => {
-        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-      };
-    }
-  }, [usernameInput, activeTab]);
+  // Deselect player to search again or pick another
+  const handleBackToResults = () => {
+    setFoundUser(null);
+    setVerificationError(null);
+    setVerificationSuccess(false);
+    playSound('click');
+  };
 
   // MANDATORY Bio Verification Handler: Verifies code is in live Roblox bio before signing in
   const handleVerifyBioAndSignIn = async () => {
@@ -293,6 +317,19 @@ export default function SignInModal({
     }
   };
 
+  const handleAdminToggleOAuth = async () => {
+    if (!onToggleOAuth || isTogglingOAuth) return;
+    setIsTogglingOAuth(true);
+    try {
+      await onToggleOAuth(!isOAuthEnabled);
+      playSound('coin');
+    } catch (err) {
+      console.error('Error toggling OAuth:', err);
+    } finally {
+      setIsTogglingOAuth(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -358,24 +395,32 @@ export default function SignInModal({
                 }`}
               >
                 <ShieldCheck size={14} className={activeTab === 'roblox_fast' ? 'text-black' : 'text-amber-400'} />
-                <span>Bio Verification</span>
+                <span>Player Search & Bio</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('roblox_oauth');
-                  playSound('click');
-                }}
-                className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  activeTab === 'roblox_oauth'
-                    ? 'bg-red-600 text-white shadow-md'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
-                }`}
-              >
-                <Sparkles size={13} />
-                <span>Roblox OAuth</span>
-              </button>
+              {/* Show Roblox OAuth Tab if Enabled globally OR if User is Admin */}
+              {(isOAuthEnabled || isAdmin) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('roblox_oauth');
+                    playSound('click');
+                  }}
+                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 relative ${
+                    activeTab === 'roblox_oauth'
+                      ? 'bg-red-600 text-white shadow-md font-black'
+                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
+                  }`}
+                >
+                  <Sparkles size={13} />
+                  <span>Roblox OAuth</span>
+                  {isAdmin && !isOAuthEnabled && (
+                    <span className="text-[9px] px-1 py-0.2 rounded bg-zinc-800 text-amber-300 font-bold border border-amber-400/40">
+                      ADMIN
+                    </span>
+                  )}
+                </button>
+              )}
 
               {!isLinkingOnly && (
                 <button
@@ -397,110 +442,179 @@ export default function SignInModal({
           </div>
 
           <div className="p-6 sm:p-8 space-y-5 max-h-[75vh] overflow-y-auto">
-            {/* TAB 1: MANDATORY ROBLOX BIO VERIFICATION */}
+            {/* TAB 1: SEARCH ROBLOX PLAYERS & BIO VERIFICATION */}
             {activeTab === 'roblox_fast' && (
               <div className="space-y-5">
-                {/* Search Username Input */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
-                      <User size={13} className="text-amber-400" />
-                      <span>Enter Your Roblox Username or User ID</span>
-                    </label>
-                    <span className="text-[10px] text-zinc-500">Auto-detects account</span>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={usernameInput}
-                      onChange={(e) => setUsernameInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-                          lookupRobloxUser(usernameInput, true);
-                        }
-                      }}
-                      placeholder="e.g. Cadenb00ck, Builderman, or User ID (4320852390)..."
-                      className="w-full rounded-xl border border-zinc-700 bg-zinc-900 pl-11 pr-24 py-3 text-sm text-white placeholder-zinc-500 focus:border-amber-500 focus:outline-none transition-all"
-                      autoFocus
-                    />
-                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400">
-                      <Search size={16} />
-                    </div>
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-                      {isSearching ? (
-                        <div className="p-1.5 text-zinc-400 animate-spin">
-                          <Loader2 size={16} />
+                {/* Search Username Input & Explicit Search Button */}
+                {!foundUser ? (
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
+                        <Search size={13} className="text-amber-400" />
+                        <span>Search Roblox Players</span>
+                      </label>
+                      <p className="text-xs text-zinc-400">
+                        Type any Roblox username or User ID, then click <strong>Search Players</strong>.
+                      </p>
+
+                      <div className="flex gap-2 pt-1">
+                        <div className="relative flex-1">
+                          <input
+                            type="text"
+                            value={usernameInput}
+                            onChange={(e) => setUsernameInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                handleSearchPlayers();
+                              }
+                            }}
+                            placeholder="e.g. Cadenb00ck, Builderman, 4320852390..."
+                            className="w-full rounded-xl border border-zinc-700 bg-zinc-900 pl-11 pr-4 py-3 text-sm text-white placeholder-zinc-500 focus:border-amber-500 focus:outline-none transition-all"
+                            autoFocus
+                          />
+                          <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400">
+                            <User size={16} />
+                          </div>
                         </div>
-                      ) : usernameInput.trim() ? (
+
                         <button
                           type="button"
-                          onClick={() => {
-                            if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-                            lookupRobloxUser(usernameInput, true);
-                          }}
-                          className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs transition-all shadow cursor-pointer active:scale-95"
+                          disabled={isSearching}
+                          onClick={handleSearchPlayers}
+                          className="px-5 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-zinc-950 font-black text-xs transition-all shadow-md shadow-amber-500/20 flex items-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
                         >
-                          Find
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-
-                {searchError && (
-                  <div className="p-3 rounded-xl bg-red-600/90 text-white text-xs flex flex-col gap-1 border border-red-500 shadow-md">
-                    <div className="flex items-center gap-2 font-bold">
-                      <AlertCircle size={16} className="shrink-0" />
-                      <span>{searchError}</span>
-                    </div>
-                    <p className="text-[11px] text-red-100 pl-6">
-                      Tip: You can also enter your numeric Roblox User ID (e.g. <code>4320852390</code>) or your Roblox profile link directly!
-                    </p>
-                  </div>
-                )}
-
-                {/* Found User & Mandatory 3-Step Bio Verification Box */}
-                {foundUser && (
-                  <div className="p-5 rounded-2xl bg-zinc-900/90 border border-zinc-800 space-y-5 shadow-xl">
-                    {/* User Header Preview */}
-                    <div className="flex items-center gap-3.5 p-3 rounded-xl bg-zinc-950/80 border border-zinc-800">
-                      <div className="relative shrink-0">
-                        <div className="h-14 w-14 rounded-xl overflow-hidden border-2 border-amber-500/40 bg-zinc-900 shadow-md flex items-center justify-center">
-                          {foundUser.avatarHeadshot ? (
-                            <img
-                              src={foundUser.avatarHeadshot}
-                              alt={foundUser.displayName}
-                              className="h-full w-full object-cover"
-                            />
+                          {isSearching ? (
+                            <Loader2 size={16} className="animate-spin text-zinc-950" />
                           ) : (
-                            <User size={24} className="text-zinc-500" />
+                            <Search size={16} />
+                          )}
+                          <span>{isSearching ? 'Searching...' : 'Search Players'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {searchError && (
+                      <div className="p-3 rounded-xl bg-red-950/80 text-red-200 text-xs flex flex-col gap-1 border border-red-500 shadow-md">
+                        <div className="flex items-center gap-2 font-bold text-red-400">
+                          <AlertCircle size={16} className="shrink-0" />
+                          <span>{searchError}</span>
+                        </div>
+                        <p className="text-[11px] text-zinc-300 pl-6">
+                          Tip: You can also enter your numeric Roblox User ID (e.g. <code>4320852390</code>) or direct Roblox profile URL.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Matching Players List / Grid */}
+                    {hasSearched && matchingPlayers.length > 0 && (
+                      <div className="space-y-3 pt-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                            <Users size={14} />
+                            <span>Matching Players ({matchingPlayers.length})</span>
+                          </span>
+                          <span className="text-[11px] text-zinc-400">Click your avatar to select</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-2.5 max-h-[300px] overflow-y-auto pr-1">
+                          {matchingPlayers.map((player) => (
+                            <button
+                              key={player.id}
+                              type="button"
+                              onClick={() => handleSelectPlayer(player)}
+                              className="w-full p-3 rounded-xl bg-zinc-900 hover:bg-zinc-800/90 border border-zinc-800 hover:border-amber-500/50 transition-all flex items-center gap-3 text-left group cursor-pointer shadow-md hover:scale-[1.01]"
+                            >
+                              <div className="relative shrink-0">
+                                <div className="h-12 w-12 rounded-xl overflow-hidden border border-zinc-700 bg-zinc-950 group-hover:border-amber-500/60 transition-colors flex items-center justify-center">
+                                  {player.avatarHeadshot ? (
+                                    <img
+                                      src={player.avatarHeadshot}
+                                      alt={player.displayName}
+                                      className="h-full w-full object-cover"
+                                      loading="lazy"
+                                    />
+                                  ) : (
+                                    <User size={20} className="text-zinc-500" />
+                                  )}
+                                </div>
+                                {player.hasVerifiedBadge && (
+                                  <div className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full bg-blue-500 flex items-center justify-center text-white text-[8px]">
+                                    ✓
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <h5 className="font-black text-white text-sm truncate group-hover:text-amber-400 transition-colors">
+                                    {player.displayName}
+                                  </h5>
+                                </div>
+                                <p className="text-xs text-zinc-400 truncate">@{player.name}</p>
+                                <p className="text-[10px] text-zinc-500">ID: {player.id}</p>
+                              </div>
+
+                              <div className="px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 group-hover:bg-amber-500 group-hover:text-zinc-950 text-amber-300 text-xs font-black transition-all flex items-center gap-1 shrink-0">
+                                <span>Select</span>
+                                <ChevronRight size={13} />
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Found User & Mandatory 3-Step Bio Verification Box */
+                  <div className="p-5 rounded-2xl bg-zinc-900/90 border border-zinc-800 space-y-5 shadow-xl">
+                    {/* Selected User Header & Change Button */}
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-950/80 border border-zinc-800">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="relative shrink-0">
+                          <div className="h-12 w-12 rounded-xl overflow-hidden border-2 border-amber-500/40 bg-zinc-900 shadow-md flex items-center justify-center">
+                            {foundUser.avatarHeadshot ? (
+                              <img
+                                src={foundUser.avatarHeadshot}
+                                alt={foundUser.displayName}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <User size={20} className="text-zinc-500" />
+                            )}
+                          </div>
+                          {foundUser.hasVerifiedBadge && (
+                            <div className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full bg-blue-500 flex items-center justify-center text-white text-[8px]">
+                              ✓
+                            </div>
                           )}
                         </div>
-                        {foundUser.hasVerifiedBadge && (
-                          <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-blue-500 border border-[#111216] flex items-center justify-center text-white">
-                            <CheckCircle2 size={10} />
-                          </div>
-                        )}
-                      </div>
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
+                        <div className="min-w-0">
                           <h4 className="font-bold text-white text-sm truncate">{foundUser.displayName}</h4>
+                          <p className="text-xs text-zinc-400 truncate">@{foundUser.name}</p>
+                          <p className="text-[10px] text-zinc-500">ID: {foundUser.id}</p>
                         </div>
-                        <p className="text-xs text-zinc-400 truncate">@{foundUser.name}</p>
-                        <p className="text-[10px] text-zinc-500">ID: {foundUser.id}</p>
                       </div>
 
-                      <a
-                        href={`https://www.roblox.com/users/${foundUser.id}/profile`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[11px] font-bold text-zinc-300 transition-colors flex items-center gap-1 shrink-0"
-                      >
-                        <span>Profile</span>
-                        <ExternalLink size={11} />
-                      </a>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={handleBackToResults}
+                          className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-zinc-300 transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <ArrowLeft size={12} />
+                          <span>Change</span>
+                        </button>
+
+                        <a
+                          href={`https://www.roblox.com/users/${foundUser.id}/profile`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-zinc-300 transition-colors flex items-center gap-1"
+                        >
+                          <ExternalLink size={12} />
+                        </a>
+                      </div>
                     </div>
 
                     {/* Step-by-Step Bio Verification Instructions */}
@@ -608,8 +722,56 @@ export default function SignInModal({
             )}
 
             {/* TAB 2: OFFICIAL ROBLOX OAUTH */}
-            {activeTab === 'roblox_oauth' && (
+            {activeTab === 'roblox_oauth' && (isOAuthEnabled || isAdmin) && (
               <div className="space-y-5">
+                {/* Admin Management Banner if Admin */}
+                {isAdmin && (
+                  <div className="p-4 rounded-xl bg-gradient-to-r from-amber-950/40 via-zinc-900 to-zinc-900 border border-amber-500/40 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-amber-400 font-black text-xs uppercase tracking-wider">
+                        <Shield size={16} />
+                        <span>Admin OAuth Control</span>
+                      </div>
+                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                        isOAuthEnabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                      }`}>
+                        {isOAuthEnabled ? 'Enabled for Visitors' : 'Disabled for Visitors'}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-zinc-300">
+                      As an admin, you can enable or disable the official Roblox OAuth login button for public visitors.
+                    </p>
+
+                    {onToggleOAuth && (
+                      <button
+                        type="button"
+                        disabled={isTogglingOAuth}
+                        onClick={handleAdminToggleOAuth}
+                        className={`w-full py-2 px-3 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow ${
+                          isOAuthEnabled
+                            ? 'bg-red-900/60 hover:bg-red-800 text-red-200 border border-red-500/50'
+                            : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30'
+                        }`}
+                      >
+                        {isTogglingOAuth ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : isOAuthEnabled ? (
+                          <>
+                            <Lock size={14} />
+                            <span>Disable Roblox OAuth for Public Visitors</span>
+                          </>
+                        ) : (
+                          <>
+                            <Zap size={14} />
+                            <span>Enable Roblox OAuth for Public Visitors</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 <div className="p-4 rounded-xl bg-gradient-to-r from-red-950/40 via-zinc-900 to-zinc-900 border border-red-900/50 space-y-2">
                   <div className="flex items-center gap-2 text-red-400 font-bold text-xs uppercase tracking-wider">
                     <ShieldCheck size={16} />
@@ -636,7 +798,7 @@ export default function SignInModal({
                       className="w-full py-2 px-3 rounded-lg bg-white text-zinc-950 font-black text-xs hover:bg-zinc-100 active:scale-95 transition-all flex items-center justify-center gap-1.5 shadow"
                     >
                       <KeyRound size={14} className="text-amber-600" />
-                      <span>Switch to Bio Verification (Instant)</span>
+                      <span>Switch to Player Search &amp; Bio (Instant)</span>
                     </button>
                   </div>
                 )}

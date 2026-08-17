@@ -17,7 +17,6 @@ import {
   ShoppingBag,
   ExternalLink
 } from 'lucide-react';
-import CoolMerchButton from './CoolMerchButton';
 import { AppNotification, NotificationType } from '../types';
 
 interface NotificationsModalProps {
@@ -237,15 +236,6 @@ export default function NotificationsModal({
 
           {/* List Content */}
           <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
-            {/* Featured Official Merch Banner */}
-            <div className="my-1">
-              <CoolMerchButton
-                variant="banner"
-                label="BloxVote Official Merch Drop!"
-                sublabel="Hoodies, tees, stickers & exclusive metaverse apparel."
-              />
-            </div>
-
             {filteredNotifications.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center text-zinc-500">
                 <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-zinc-900 border border-zinc-800 mb-3">
