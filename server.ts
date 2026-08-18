@@ -111,6 +111,130 @@ async function startServer() {
     }
   });
 
+  // In-memory cache for Roblox player searches (5 min TTL)
+  const playerSearchCache = new Map<string, { data: any[]; timestamp: number }>();
+
+  // API Route: High-Speed Roblox Player Search (Exact match + keyword fuzzy search + thumbnail batching)
+  app.get(['/api/roblox/search-users', '/api/roblox-search'], async (req, res) => {
+    try {
+      const keyword = (req.query.keyword as string || req.query.query as string || req.query.q as string || '').trim();
+      if (!keyword) {
+        return res.json({ success: true, data: [] });
+      }
+
+      const cacheKey = keyword.toLowerCase();
+      const cached = playerSearchCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) {
+        return res.json({ success: true, data: cached.data });
+      }
+
+      const results: any[] = [];
+      const seenIds = new Set<number>();
+
+      const addPlayer = (id: number, name: string, displayName?: string, hasVerifiedBadge?: boolean) => {
+        if (!id || seenIds.has(id)) return;
+        seenIds.add(id);
+        results.push({
+          id,
+          name: name || `User_${id}`,
+          displayName: displayName || name || `User #${id}`,
+          avatarHeadshot: `https://www.roblox.com/headshot-thumbnail/image?userId=${id}&width=150&height=150&format=png`,
+          avatarFull: `https://www.roblox.com/avatar-thumbnail/image?userId=${id}&width=420&height=420&format=png`,
+          hasVerifiedBadge: Boolean(hasVerifiedBadge),
+          isVerifiedOwner: false
+        });
+      };
+
+      // 1. If query is numeric ID or profile URL, fetch that exact user
+      const urlMatch = keyword.match(/roblox\.com\/users\/(\d+)/i);
+      const numericId = urlMatch ? parseInt(urlMatch[1], 10) : (/^\d+$/.test(keyword) ? parseInt(keyword, 10) : null);
+
+      if (numericId) {
+        try {
+          const userRes = await fetch(`https://users.roblox.com/v1/users/${numericId}`);
+          if (userRes.ok) {
+            const user = await userRes.json() as any;
+            addPlayer(user.id || numericId, user.name, user.displayName, user.hasVerifiedBadge);
+          } else {
+            addPlayer(numericId, `User_${numericId}`, `User #${numericId}`);
+          }
+        } catch {
+          addPlayer(numericId, `User_${numericId}`, `User #${numericId}`);
+        }
+      }
+
+      // 2. Perform exact username lookup + fuzzy keyword search in parallel
+      const cleanUsername = keyword.replace(/^@/, '');
+      const [exactRes, searchRes] = await Promise.allSettled([
+        fetch('https://users.roblox.com/v1/usernames/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            usernames: [cleanUsername],
+            excludeBannedUsers: false
+          })
+        }),
+        fetch(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(cleanUsername)}&limit=20`)
+      ]);
+
+      if (exactRes.status === 'fulfilled' && exactRes.value.ok) {
+        try {
+          const exactData = await exactRes.value.json() as any;
+          if (exactData && Array.isArray(exactData.data)) {
+            for (const u of exactData.data) {
+              if (u.id) addPlayer(u.id, u.name, u.displayName, u.hasVerifiedBadge);
+            }
+          }
+        } catch {}
+      }
+
+      if (searchRes.status === 'fulfilled' && searchRes.value.ok) {
+        try {
+          const searchData = await searchRes.value.json() as any;
+          if (searchData && Array.isArray(searchData.data)) {
+            for (const u of searchData.data) {
+              if (u.id) addPlayer(u.id, u.name, u.displayName, u.hasVerifiedBadge);
+            }
+          }
+        } catch {}
+      }
+
+      // Fetch avatar headshots for top 20 players in batch
+      if (results.length > 0) {
+        const topIds = results.slice(0, 20).map(r => r.id);
+        try {
+          const thumbRes = await fetch(
+            `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${topIds.join(',')}&size=150x150&format=Png&isCircular=false`
+          );
+          if (thumbRes.ok) {
+            const thumbData = await thumbRes.json() as any;
+            if (thumbData?.data && Array.isArray(thumbData.data)) {
+              const map = new Map<number, string>();
+              for (const item of thumbData.data) {
+                if (item.targetId && item.imageUrl) {
+                  map.set(item.targetId, item.imageUrl);
+                }
+              }
+              for (const r of results) {
+                if (map.has(r.id)) {
+                  r.avatarHeadshot = map.get(r.id)!;
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+
+      // Cache results
+      playerSearchCache.set(cacheKey, { data: results, timestamp: Date.now() });
+
+      return res.json({ success: true, data: results });
+    } catch (error: any) {
+      console.error('Error searching Roblox users:', error);
+      return res.status(500).json({ error: error.message || 'Internal server error while searching Roblox users' });
+    }
+  });
+
   // API Route: Fetch Roblox User Profile and Avatars (Headshot + Full 3D render)
   app.get('/api/roblox-user', async (req, res) => {
     try {

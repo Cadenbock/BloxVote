@@ -8,30 +8,32 @@ interface VerifyBioResult {
 }
 
 /**
- * Check if running on a static hosting environment (like GitHub Pages or custom domain bloxvote.com)
- * to avoid unnecessary 404 console errors from /api routes.
+ * Fetch with strict AbortController timeout to prevent hanging requests.
  */
-function isStaticHosting(): boolean {
-  if (typeof window === 'undefined') return false;
-  const host = window.location.hostname.toLowerCase();
-  return (
-    host.includes('bloxvote.com') ||
-    host.endsWith('github.io') ||
-    host.endsWith('pages.dev') ||
-    host.endsWith('netlify.app') ||
-    host.endsWith('vercel.app')
-  );
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 3500): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 /**
- * Helper to fetch JSON across resilient endpoints and CORS proxies.
+ * Helper to fetch JSON across resilient endpoints and CORS proxies with strict timeouts.
  */
-async function fetchWithResilientFallbacks(urls: string[]): Promise<any> {
+async function fetchWithResilientFallbacks(urls: string[], timeoutMs = 2500): Promise<any> {
   for (const url of urls) {
     try {
-      const res = await fetch(url, {
+      const res = await fetchWithTimeout(url, {
         headers: { Accept: 'application/json' }
-      });
+      }, timeoutMs);
+
       if (res.ok) {
         const text = await res.text();
         try {
@@ -46,7 +48,7 @@ async function fetchWithResilientFallbacks(urls: string[]): Promise<any> {
         }
       }
     } catch {
-      // Fetch error, try next url
+      // Timeout or network error, proceed quickly to next
     }
   }
   throw new Error('All connection strategies exhausted.');
@@ -54,7 +56,7 @@ async function fetchWithResilientFallbacks(urls: string[]): Promise<any> {
 
 /**
  * Search Roblox players matching or close to the search query.
- * Returns a list of players with avatar thumbnails, usernames, display names, and IDs.
+ * Fast, reliable, and uses backend search endpoint with caching.
  */
 export async function searchRobloxUsers(query: string): Promise<RobloxAccountInfo[]> {
   const cleanInput = query.trim();
@@ -62,10 +64,44 @@ export async function searchRobloxUsers(query: string): Promise<RobloxAccountInf
     return [];
   }
 
+  // 1. Primary Strategy: Call our high-speed Node server endpoint (/api/roblox/search-users)
+  try {
+    const apiRes = await fetchWithTimeout(`/api/roblox/search-users?keyword=${encodeURIComponent(cleanInput)}`, {}, 4000);
+    if (apiRes.ok) {
+      const json = await apiRes.json();
+      if (json && json.success && Array.isArray(json.data) && json.data.length > 0) {
+        return json.data;
+      }
+    }
+  } catch (apiErr) {
+    // Continue to fallback
+  }
+
+  // 2. Secondary Strategy: If local /api/roblox-user is available
+  try {
+    const localRes = await fetchWithTimeout(`/api/roblox-user?username=${encodeURIComponent(cleanInput)}`, {}, 3000);
+    if (localRes.ok) {
+      const data = await localRes.json();
+      if (data.success && data.user) {
+        return [{
+          id: data.user.id,
+          name: data.user.name,
+          displayName: data.user.displayName,
+          avatarHeadshot: data.user.avatarHeadshot || `https://www.roblox.com/headshot-thumbnail/image?userId=${data.user.id}&width=150&height=150&format=png`,
+          avatarFull: data.user.avatarFull || `https://www.roblox.com/avatar-thumbnail/image?userId=${data.user.id}&width=420&height=420&format=png`,
+          hasVerifiedBadge: Boolean(data.user.hasVerifiedBadge),
+          isVerifiedOwner: false
+        }];
+      }
+    }
+  } catch {
+    // Continue to client proxy fallback
+  }
+
+  // 3. Fallback Strategy: Client-side proxies with strict short timeouts
   const results: RobloxAccountInfo[] = [];
   const seenIds = new Set<number>();
 
-  // Helper to add player cleanly
   const addPlayer = (id: number, name: string, displayName?: string, isVerifiedBadge?: boolean) => {
     if (!id || seenIds.has(id)) return;
     seenIds.add(id);
@@ -73,14 +109,13 @@ export async function searchRobloxUsers(query: string): Promise<RobloxAccountInf
       id,
       name: name || `User_${id}`,
       displayName: displayName || name || `User #${id}`,
-      avatarHeadshot: `https://www.roblox.com/headshot-thumbnail/image?userId=${id}&width=420&height=420&format=png`,
+      avatarHeadshot: `https://www.roblox.com/headshot-thumbnail/image?userId=${id}&width=150&height=150&format=png`,
       avatarFull: `https://www.roblox.com/avatar-thumbnail/image?userId=${id}&width=420&height=420&format=png`,
       hasVerifiedBadge: Boolean(isVerifiedBadge),
       isVerifiedOwner: false
     });
   };
 
-  // 1. If query is numeric ID or profile URL, fetch that exact user first
   const urlMatch = cleanInput.match(/roblox\.com\/users\/(\d+)/i);
   const numericId = urlMatch ? parseInt(urlMatch[1], 10) : (/^\d+$/.test(cleanInput) ? parseInt(cleanInput, 10) : null);
 
@@ -88,10 +123,8 @@ export async function searchRobloxUsers(query: string): Promise<RobloxAccountInf
     try {
       const userData = await fetchWithResilientFallbacks([
         `https://users.roproxy.com/v1/users/${numericId}`,
-        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(`https://users.roblox.com/v1/users/${numericId}`)}`,
-        `https://api.allorigins.win/get?url=${encodeURIComponent(`https://users.roblox.com/v1/users/${numericId}`)}`,
-        `https://corsproxy.io/?url=${encodeURIComponent(`https://users.roblox.com/v1/users/${numericId}`)}`
-      ]);
+        `https://api.allorigins.win/get?url=${encodeURIComponent(`https://users.roblox.com/v1/users/${numericId}`)}`
+      ], 2000);
 
       if (userData && (userData.name || userData.id)) {
         addPlayer(userData.id || numericId, userData.name, userData.displayName, userData.hasVerifiedBadge);
@@ -103,40 +136,11 @@ export async function searchRobloxUsers(query: string): Promise<RobloxAccountInf
     }
   }
 
-  // 2. Try exact username match first (prioritize exact match at top)
-  try {
-    const postRes = await fetch('https://users.roproxy.com/v1/usernames/users', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({
-        usernames: [cleanInput],
-        excludeBannedUsers: false
-      })
-    });
-
-    if (postRes.ok) {
-      const result = await postRes.json();
-      if (result && Array.isArray(result.data)) {
-        for (const u of result.data) {
-          if (u.id) addPlayer(u.id, u.name, u.displayName, u.hasVerifiedBadge);
-        }
-      }
-    }
-  } catch {
-    // Continue to fuzzy search
-  }
-
-  // 3. Search multi-player endpoint for all players close to or with that username
   try {
     const searchData = await fetchWithResilientFallbacks([
       `https://users.roproxy.com/v1/users/search?keyword=${encodeURIComponent(cleanInput)}&limit=20`,
-      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(cleanInput)}&limit=20`)}`,
-      `https://api.allorigins.win/get?url=${encodeURIComponent(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(cleanInput)}&limit=20`)}`,
-      `https://corsproxy.io/?url=${encodeURIComponent(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(cleanInput)}&limit=20`)}`
-    ]);
+      `https://api.allorigins.win/get?url=${encodeURIComponent(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(cleanInput)}&limit=20`)}`
+    ], 2500);
 
     if (searchData && Array.isArray(searchData.data)) {
       for (const u of searchData.data) {
@@ -146,29 +150,14 @@ export async function searchRobloxUsers(query: string): Promise<RobloxAccountInf
       }
     }
   } catch (searchErr) {
-    console.warn('Roblox player search warning:', searchErr);
-  }
-
-  // 4. If no results found yet and not on static hosting, try server route
-  if (results.length === 0 && !isStaticHosting()) {
-    try {
-      const localRes = await fetch(`/api/roblox-user?username=${encodeURIComponent(cleanInput)}`);
-      if (localRes.ok) {
-        const data = await localRes.json();
-        if (data.success && data.user) {
-          addPlayer(data.user.id, data.user.name, data.user.displayName, data.user.hasVerifiedBadge);
-        }
-      }
-    } catch {
-      // ignore
-    }
+    // If all else fails, return whatever we have
   }
 
   return results;
 }
 
 /**
- * Robust Roblox user lookup that works everywhere (Cloud Run, Local, GitHub Pages, bloxvote.com).
+ * Robust Roblox user lookup that works everywhere.
  */
 export async function lookupRobloxAccount(input: string): Promise<RobloxAccountInfo> {
   const cleanInput = input.trim();
@@ -178,7 +167,6 @@ export async function lookupRobloxAccount(input: string): Promise<RobloxAccountI
 
   const players = await searchRobloxUsers(cleanInput);
   if (players.length > 0) {
-    // Find exact match or return first player
     const exact = players.find(
       p => p.name.toLowerCase() === cleanInput.toLowerCase() || p.displayName.toLowerCase() === cleanInput.toLowerCase()
     );
@@ -190,7 +178,6 @@ export async function lookupRobloxAccount(input: string): Promise<RobloxAccountI
 
 /**
  * Robust Roblox Bio verification that verifies the code exists in the live Roblox bio.
- * Works seamlessly on Cloud Run, Local Dev, and static hosts (GitHub Pages, bloxvote.com).
  */
 export async function verifyRobloxBioOwnership(userId: number, code: string): Promise<VerifyBioResult> {
   const cleanCode = code.trim();
@@ -202,37 +189,34 @@ export async function verifyRobloxBioOwnership(userId: number, code: string): Pr
     };
   }
 
-  // 1. Try local server API first if not on static hosting
-  if (!isStaticHosting()) {
-    try {
-      const localRes = await fetch('/api/verify-roblox-bio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, code: cleanCode })
-      });
-      const contentType = localRes.headers.get('content-type') || '';
-      if (localRes.ok && contentType.includes('application/json')) {
-        const data = await localRes.json();
-        return {
-          verified: Boolean(data.verified),
-          currentBio: data.currentBio || '',
-          message: data.message,
-          error: data.error
-        };
-      }
-    } catch {
-      // Continue to client proxy fallback
+  // 1. Try local server API first
+  try {
+    const localRes = await fetchWithTimeout('/api/verify-roblox-bio', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, code: cleanCode })
+    }, 4000);
+
+    const contentType = localRes.headers.get('content-type') || '';
+    if (localRes.ok && contentType.includes('application/json')) {
+      const data = await localRes.json();
+      return {
+        verified: Boolean(data.verified),
+        currentBio: data.currentBio || '',
+        message: data.message,
+        error: data.error
+      };
     }
+  } catch {
+    // Continue to client proxy fallback
   }
 
-  // 2. Fetch user profile description via RoProxy and CORS proxies
+  // 2. Client-side fallback via CORS proxies
   try {
     const userData = await fetchWithResilientFallbacks([
       `https://users.roproxy.com/v1/users/${userId}?_t=${Date.now()}`,
-      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(`https://users.roblox.com/v1/users/${userId}?_t=${Date.now()}`)}`,
-      `https://api.allorigins.win/get?url=${encodeURIComponent(`https://users.roblox.com/v1/users/${userId}?_t=${Date.now()}`)}`,
-      `https://corsproxy.io/?url=${encodeURIComponent(`https://users.roblox.com/v1/users/${userId}`)}`
-    ]);
+      `https://api.allorigins.win/get?url=${encodeURIComponent(`https://users.roblox.com/v1/users/${userId}?_t=${Date.now()}`)}`
+    ], 3000);
 
     if (userData) {
       const liveBio = userData.description || '';

@@ -919,23 +919,6 @@ export default function SignInModal({
                 </div>
               </div>
             )}
-
-            {/* Legal Footer */}
-            <div className="border-t border-zinc-800/80 pt-5 space-y-2.5 text-center">
-              <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[11px] text-zinc-400">
-                <a href="https://corp.roblox.com" target="_blank" rel="noreferrer" className="hover:underline">About Us</a>
-                <span>|</span>
-                <a href="https://corp.roblox.com/careers" target="_blank" rel="noreferrer" className="hover:underline">Join Us</a>
-                <span>|</span>
-                <a href="https://www.roblox.com/info/terms" target="_blank" rel="noreferrer" className="hover:underline">Terms</a>
-                <span>|</span>
-                <a href="https://www.roblox.com/info/privacy" target="_blank" rel="noreferrer" className="hover:underline">Privacy</a>
-              </div>
-
-              <p className="text-[10px] text-zinc-500 max-w-sm mx-auto leading-relaxed">
-                ©2026 Roblox Corporation. Roblox, the Roblox logo and Powering Imagination are registered trademarks.
-              </p>
-            </div>
           </div>
         </motion.div>
       </div>
