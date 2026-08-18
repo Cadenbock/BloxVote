@@ -574,7 +574,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <div>
                           <h3 className="text-sm font-black text-white flex items-center gap-2">
                             <svg className="w-4 h-4 fill-red-500" viewBox="0 0 24 24">
-                              <path d="M18.92 2.01L5.08 5.71 1.38 19.55l13.84-3.7 3.7-13.84zM10.8 14.88l-2.48.66.66-2.48 2.48-.66-.66 2.48z"/>
+                              <path fillRule="evenodd" clipRule="evenodd" d="M17.07 3.23L3.23 6.93 6.93 20.77 20.77 17.07 17.07 3.23zM13.63 9.17L9.17 10.37 10.37 14.83 14.83 13.63 13.63 9.17z"/>
                             </svg>
                             Connected Roblox Identity
                           </h3>

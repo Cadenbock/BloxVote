@@ -1933,8 +1933,8 @@ function App() {
                     }}
                     className="flex items-center gap-2 rounded-full bg-gradient-to-r from-red-600 via-red-600 to-rose-600 px-4 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-black text-white transition-all hover:from-red-500 hover:to-rose-500 active:scale-95 shadow-lg shadow-red-950/50 group"
                   >
-                    <svg className="w-4 h-4 fill-white group-hover:rotate-6 transition-transform" viewBox="0 0 24 24">
-                      <path d="M18.92 2.01L5.08 5.71 1.38 19.55l13.84-3.7 3.7-13.84zM10.8 14.88l-2.48.66.66-2.48 2.48-.66-.66 2.48z"/>
+                    <svg className="w-4 h-4 fill-white transition-transform group-hover:scale-110" viewBox="0 0 24 24">
+                      <path fillRule="evenodd" clipRule="evenodd" d="M17.07 3.23L3.23 6.93 6.93 20.77 20.77 17.07 17.07 3.23zM13.63 9.17L9.17 10.37 10.37 14.83 14.83 13.63 13.63 9.17z"/>
                     </svg>
                     <span>Sign In with Roblox</span>
                   </button>
