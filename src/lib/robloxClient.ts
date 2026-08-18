@@ -161,6 +161,48 @@ export async function searchRobloxUsers(query: string): Promise<RobloxAccountInf
     })
   );
 
+  // 3. Batch fetch real avatar headshots and full avatar thumbnails from CDN
+  if (results.length > 0) {
+    const userIds = results.slice(0, 20).map(r => r.id).join(',');
+    const thumbEndpoints = [
+      `https://thumbnails.roproxy.com/v1/users/avatar-headshot?userIds=${userIds}&size=150x150&format=Png&isCircular=false`,
+      `https://api.allorigins.win/get?url=${encodeURIComponent(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${userIds}&size=150x150&format=Png&isCircular=false`)}`
+    ];
+
+    for (const tUrl of thumbEndpoints) {
+      try {
+        const tRes = await fetchWithTimeout(tUrl, { headers: { Accept: 'application/json' } }, 2500);
+        if (tRes.ok) {
+          const text = await tRes.text();
+          let parsed: any;
+          try {
+            parsed = JSON.parse(text);
+            if (parsed && typeof parsed.contents === 'string') {
+              parsed = JSON.parse(parsed.contents);
+            }
+          } catch {
+            continue;
+          }
+
+          if (parsed && Array.isArray(parsed.data) && parsed.data.length > 0) {
+            const headshotMap = new Map<number, string>();
+            for (const item of parsed.data) {
+              if (item.targetId && item.imageUrl) {
+                headshotMap.set(item.targetId, item.imageUrl);
+              }
+            }
+            for (const r of results) {
+              if (headshotMap.has(r.id)) {
+                r.avatarHeadshot = headshotMap.get(r.id)!;
+              }
+            }
+            break;
+          }
+        }
+      } catch {}
+    }
+  }
+
   // Sort exact match to top if present
   results.sort((a, b) => {
     const aExact = a.name.toLowerCase() === lowerQuery || a.displayName.toLowerCase() === lowerQuery;

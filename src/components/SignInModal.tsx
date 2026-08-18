@@ -532,6 +532,10 @@ export default function SignInModal({
                                       alt={player.displayName}
                                       className="h-full w-full object-cover"
                                       loading="lazy"
+                                      referrerPolicy="no-referrer"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = 'none';
+                                      }}
                                     />
                                   ) : (
                                     <User size={20} className="text-zinc-500" />
@@ -577,6 +581,10 @@ export default function SignInModal({
                                 src={foundUser.avatarHeadshot}
                                 alt={foundUser.displayName}
                                 className="h-full w-full object-cover"
+                                referrerPolicy="no-referrer"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                }}
                               />
                             ) : (
                               <User size={20} className="text-zinc-500" />
