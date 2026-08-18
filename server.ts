@@ -163,8 +163,13 @@ async function startServer() {
         }
       }
 
-      // 2. Perform exact username lookup + fuzzy keyword search in parallel
-      const cleanUsername = keyword.replace(/^@/, '');
+      // 1.5 Handle special usernames (e.g. "roblox" -> id: 1)
+      const cleanUsername = keyword.replace(/^@/, '').trim();
+      if (cleanUsername.toLowerCase() === 'roblox') {
+        addPlayer(1, 'Roblox', 'Roblox', true);
+      }
+
+      // 2. Perform exact username lookup + fuzzy keyword search in parallel (limit=10 as required by Roblox API)
       const [exactRes, searchRes] = await Promise.allSettled([
         fetch('https://users.roblox.com/v1/usernames/users', {
           method: 'POST',
@@ -174,7 +179,7 @@ async function startServer() {
             excludeBannedUsers: false
           })
         }),
-        fetch(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(cleanUsername)}&limit=20`)
+        fetch(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(cleanUsername)}&limit=10`)
       ]);
 
       if (exactRes.status === 'fulfilled' && exactRes.value.ok) {

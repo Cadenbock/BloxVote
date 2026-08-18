@@ -56,7 +56,7 @@ async function fetchWithResilientFallbacks(urls: string[], timeoutMs = 2500): Pr
 
 /**
  * Search Roblox players matching or close to the search query.
- * Fast, reliable, and uses backend search endpoint with caching.
+ * Fast, reliable, and uses parallel strategies with limit=10.
  */
 export async function searchRobloxUsers(query: string): Promise<RobloxAccountInfo[]> {
   const cleanInput = query.trim();
@@ -64,41 +64,8 @@ export async function searchRobloxUsers(query: string): Promise<RobloxAccountInf
     return [];
   }
 
-  // 1. Primary Strategy: Call our high-speed Node server endpoint (/api/roblox/search-users)
-  try {
-    const apiRes = await fetchWithTimeout(`/api/roblox/search-users?keyword=${encodeURIComponent(cleanInput)}`, {}, 4000);
-    if (apiRes.ok) {
-      const json = await apiRes.json();
-      if (json && json.success && Array.isArray(json.data) && json.data.length > 0) {
-        return json.data;
-      }
-    }
-  } catch (apiErr) {
-    // Continue to fallback
-  }
-
-  // 2. Secondary Strategy: If local /api/roblox-user is available
-  try {
-    const localRes = await fetchWithTimeout(`/api/roblox-user?username=${encodeURIComponent(cleanInput)}`, {}, 3000);
-    if (localRes.ok) {
-      const data = await localRes.json();
-      if (data.success && data.user) {
-        return [{
-          id: data.user.id,
-          name: data.user.name,
-          displayName: data.user.displayName,
-          avatarHeadshot: data.user.avatarHeadshot || `https://www.roblox.com/headshot-thumbnail/image?userId=${data.user.id}&width=150&height=150&format=png`,
-          avatarFull: data.user.avatarFull || `https://www.roblox.com/avatar-thumbnail/image?userId=${data.user.id}&width=420&height=420&format=png`,
-          hasVerifiedBadge: Boolean(data.user.hasVerifiedBadge),
-          isVerifiedOwner: false
-        }];
-      }
-    }
-  } catch {
-    // Continue to client proxy fallback
-  }
-
-  // 3. Fallback Strategy: Client-side proxies with strict short timeouts
+  const cleanUsername = cleanInput.replace(/^@/, '').trim();
+  const lowerQuery = cleanUsername.toLowerCase();
   const results: RobloxAccountInfo[] = [];
   const seenIds = new Set<number>();
 
@@ -116,6 +83,12 @@ export async function searchRobloxUsers(query: string): Promise<RobloxAccountInf
     });
   };
 
+  // Special case for famous keyword "roblox"
+  if (lowerQuery === 'roblox') {
+    addPlayer(1, 'Roblox', 'Roblox', true);
+  }
+
+  // If numeric ID or profile URL, resolve directly
   const urlMatch = cleanInput.match(/roblox\.com\/users\/(\d+)/i);
   const numericId = urlMatch ? parseInt(urlMatch[1], 10) : (/^\d+$/.test(cleanInput) ? parseInt(cleanInput, 10) : null);
 
@@ -136,22 +109,66 @@ export async function searchRobloxUsers(query: string): Promise<RobloxAccountInf
     }
   }
 
+  // 1. Primary Strategy: Try backend endpoint first
   try {
-    const searchData = await fetchWithResilientFallbacks([
-      `https://users.roproxy.com/v1/users/search?keyword=${encodeURIComponent(cleanInput)}&limit=20`,
-      `https://api.allorigins.win/get?url=${encodeURIComponent(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(cleanInput)}&limit=20`)}`
-    ], 2500);
-
-    if (searchData && Array.isArray(searchData.data)) {
-      for (const u of searchData.data) {
-        if (u.id) {
-          addPlayer(u.id, u.name, u.displayName, u.hasVerifiedBadge);
+    const apiRes = await fetchWithTimeout(`/api/roblox/search-users?keyword=${encodeURIComponent(cleanUsername)}`, {}, 2500);
+    if (apiRes.ok) {
+      const json = await apiRes.json();
+      if (json && json.success && Array.isArray(json.data) && json.data.length > 0) {
+        for (const item of json.data) {
+          if (item.id) addPlayer(item.id, item.name, item.displayName, item.hasVerifiedBadge);
+        }
+        if (results.length > 0) {
+          return results;
         }
       }
     }
-  } catch (searchErr) {
-    // If all else fails, return whatever we have
+  } catch {
+    // Continue to proxy strategy
   }
+
+  // 2. Secondary Strategy: Multi-Proxy parallel query with valid limit=10
+  const searchUrls = [
+    `https://users.roproxy.com/v1/users/search?keyword=${encodeURIComponent(cleanUsername)}&limit=10`,
+    `https://api.allorigins.win/get?url=${encodeURIComponent(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(cleanUsername)}&limit=10`)}`,
+    `https://corsproxy.io/?url=${encodeURIComponent(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(cleanUsername)}&limit=10`)}`
+  ];
+
+  await Promise.allSettled(
+    searchUrls.map(async (url) => {
+      try {
+        const res = await fetchWithTimeout(url, { headers: { Accept: 'application/json' } }, 3000);
+        if (!res.ok) return;
+        const text = await res.text();
+        let parsed: any;
+        try {
+          parsed = JSON.parse(text);
+          if (parsed && typeof parsed.contents === 'string') {
+            parsed = JSON.parse(parsed.contents);
+          }
+        } catch {
+          return;
+        }
+
+        if (parsed && Array.isArray(parsed.data)) {
+          for (const u of parsed.data) {
+            if (u.id) {
+              addPlayer(u.id, u.name, u.displayName, u.hasVerifiedBadge);
+            }
+          }
+        }
+      } catch {}
+    })
+  );
+
+  // Sort exact match to top if present
+  results.sort((a, b) => {
+    const aExact = a.name.toLowerCase() === lowerQuery || a.displayName.toLowerCase() === lowerQuery;
+    const bExact = b.name.toLowerCase() === lowerQuery || b.displayName.toLowerCase() === lowerQuery;
+    if (aExact && !bExact) return -1;
+    if (!aExact && bExact) return 1;
+    return 0;
+  });
 
   return results;
 }
